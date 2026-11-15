@@ -1,0 +1,6 @@
+{
+  "name": "HEAL Ops 2.0",
+  "description": "Portal de Gestão Operacional do Instituto HEAL — Hospital Espírita André Luiz.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

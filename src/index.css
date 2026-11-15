@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --heal-bg: #F8FAFC;
+    --heal-surface: #FFFFFF;
+    --heal-surface-muted: #F1F5F9;
+    --heal-border: #E2E8F0;
+    --heal-text: #0F172A;
+    --heal-text-muted: #475569;
+    --heal-accent: #0F5E59;
+    --heal-accent-hover: #0B4A46;
+    --heal-accent-subtle: #CCFBF1;
+  }
+
+  .dark {
+    --heal-bg: #0B1117;
+    --heal-surface: #111923;
+    --heal-surface-muted: #18222F;
+    --heal-border: #243242;
+    --heal-text: #F1F5F9;
+    --heal-text-muted: #94A3B8;
+    --heal-accent: #2DD4BF;
+    --heal-accent-hover: #14B8A6;
+    --heal-accent-subtle: #134E4A;
+  }
+
+  html {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .font-mono, .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only-surface {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
