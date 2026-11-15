@@ -5,22 +5,34 @@ import { GlpiAdapter } from '../../services/opsAdapters';
 import type { TicketFilterKey, TicketItem } from '../../types/ops';
 import { Drawer, EmptyState, SemanticLabel } from './UiPrimitives';
 
-const FILTER_LABELS: Record<TicketFilterKey, string> = {
-  abertos: 'Chamados abertos',
-  novos: 'Chamados novos',
-  em_atendimento: 'Em atendimento',
-  em_andamento: 'Em andamento (execução programada)',
-  sem_tecnico: 'Sem técnico nominal',
-  sem_tecnico_pop: 'Sem técnico · Desconformidade POP',
-  sem_atualizacao: 'Sem atualização (> 48h úteis)',
-  pendentes: 'Pendentes',
-  tempo_medio: 'Amostra de tempo médio',
-};
+function getFilterLabel(filter: TicketFilterKey | null, thresholdHours: number, basis: 'corridas' | 'uteis'): string {
+  if (!filter) return 'Detalhamento de Chamados';
+  const basisLabel = basis === 'uteis' ? 'úteis' : 'corridas';
+  const labels: Record<TicketFilterKey, string> = {
+    abertos: 'Chamados abertos',
+    novos: 'Chamados novos',
+    em_atendimento: 'Em atendimento',
+    em_andamento: 'Em andamento (execução programada)',
+    sem_tecnico: 'Sem técnico nominal',
+    sem_tecnico_pop: 'Sem técnico · Desconformidade POP',
+    sem_atualizacao: `Sem atualização (> ${thresholdHours}h ${basisLabel} · ref.)`,
+    pendentes: 'Pendentes',
+    tempo_medio: 'Amostra de tempo médio',
+  };
+  return labels[filter];
+}
 
 export const TicketDrawer: React.FC<{
   tickets: TicketItem[];
 }> = ({ tickets }) => {
-  const { activeTicketDrawerFilter, closeTicketDrawer, openTicketDrawer, endpointConfig, dataMode } = useOps();
+  const {
+    activeTicketDrawerFilter,
+    closeTicketDrawer,
+    openTicketDrawer,
+    endpointConfig,
+    dataMode,
+    setActiveModule,
+  } = useOps();
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyPopNonCompliant, setOnlyPopNonCompliant] = useState(false);
 
@@ -55,7 +67,11 @@ export const TicketDrawer: React.FC<{
         setSearchQuery('');
         closeTicketDrawer();
       }}
-      title={effectiveFilter ? FILTER_LABELS[effectiveFilter] : 'Detalhamento de Chamados'}
+      title={getFilterLabel(
+        effectiveFilter,
+        endpointConfig.staleTicketThresholdHours,
+        endpointConfig.staleTicketTimeBasis
+      )}
       subtitle={`Origem: GLPI via Backend · ${dataMode === 'demo' ? 'Dados demonstrativos' : 'Estado de conexão: ' + dataMode}`}
       widthClass="max-w-2xl"
     >
@@ -94,7 +110,7 @@ export const TicketDrawer: React.FC<{
           )}
         </div>
 
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
           <span>
             Exibindo <strong className="font-mono tabular-nums text-slate-800 dark:text-slate-200">{filteredTickets.length}</strong> registro(s)
           </span>
@@ -102,6 +118,24 @@ export const TicketDrawer: React.FC<{
             GLPI: {endpointConfig.glpiTicketUrlTemplate}
           </span>
         </div>
+
+        {effectiveFilter === 'sem_atualizacao' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
+            <span>
+              Regra gerencial de referência parametrizada: <strong>&gt; {endpointConfig.staleTicketThresholdHours}h {endpointConfig.staleTicketTimeBasis}</strong> (sujeita à conciliação oficial com backend/POP).
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                closeTicketDrawer();
+                setActiveModule('configuracoes');
+              }}
+              className="font-semibold underline whitespace-nowrap"
+            >
+              Ajustar parâmetro
+            </button>
+          </div>
+        )}
 
         {filteredTickets.length === 0 ? (
           <EmptyState
@@ -125,7 +159,7 @@ export const TicketDrawer: React.FC<{
                         <span aria-hidden="true">·</span>
                         <span>{ticket.macroArea}</span>
                         <span aria-hidden="true">·</span>
-                        <span className="font-mono tabular-nums">{ticket.lastUpdatedAt}</span>
+                        <span className="font-mono tabular-nums">{ticket.lastUpdatedAt} ({ticket.hoursWithoutUpdate}h)</span>
                       </div>
                       <h3 className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
                         {ticket.title}

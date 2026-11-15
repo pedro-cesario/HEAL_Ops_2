@@ -79,7 +79,17 @@ export const DEFAULT_ENDPOINT_CONFIG = {
   stagingUrl: 'http://localhost:8788',
   glpiTicketUrlTemplate: 'http://192.168.4.20/front/ticket.form.php?id={id}',
   autoRefreshSeconds: 60,
+  staleTicketThresholdHours: 24,
+  staleTicketTimeBasis: 'corridas' as const,
   m365Configured: false,
   localAiUrl: 'http://localhost:3310/agent',
   pdfServiceConfigured: false,
 };
+
+export const PERSISTENCE_LABELS = {
+  persistencia_real: 'Persistência real',
+  sessao_local: 'Funcional apenas na sessão',
+  demonstrativa: 'Demonstrativa',
+  dependente_backend: 'Dependente de backend',
+  nao_implementada: 'Não implementada',
+} as const;

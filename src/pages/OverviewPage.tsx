@@ -555,20 +555,20 @@ export const OverviewPage: React.FC<{
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-[#243242] pt-3">
               <span className="text-[11px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
                 <Inbox size={13} />
-                Ações de envio exigem conexão Microsoft 365 configurada.
+                Ações reais dependem de conexão Microsoft 365 + backend.
               </span>
               <button
                 type="button"
                 onClick={() => {
                   pushToast({
-                    title: 'Ação indisponível no modo demonstração',
-                    description: 'O envio de resposta ou registro de pendência via Outlook depende da homologação da integração Microsoft 365.',
+                    title: 'Ação bloqueada sem integração Microsoft 365',
+                    description: 'A criação automática de pendência a partir de e-mails do Outlook aguarda homologação OAuth/M365 e endpoint no backend.',
                     tone: 'warning',
                   });
                 }}
-                className="rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors"
+                className="rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
               >
-                Converter em pendência gerencial
+                Converter em pendência (Requer M365)
               </button>
             </div>
           </div>

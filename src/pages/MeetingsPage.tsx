@@ -104,6 +104,33 @@ export const MeetingsPage: React.FC = () => {
     });
   };
 
+  const handleAddCommitment = (
+    meetingId: string,
+    party: 'Colaborador' | 'Gestor' | 'Equipe',
+    owner: string,
+    action: string,
+    dueDate: string
+  ) => {
+    setMeetings((prev) =>
+      prev.map((m) =>
+        m.id === meetingId
+          ? {
+              ...m,
+              commitments: [
+                ...m.commitments,
+                { id: `c-${Date.now()}`, party, owner, action, dueDate, status: 'Pendente' },
+              ],
+            }
+          : m
+      )
+    );
+    pushToast({
+      title: 'Compromisso registrado na sessão',
+      description: 'Funcional apenas na sessão local. Persistência definitiva depende do endpoint de reuniões do backend.',
+      tone: 'info',
+    });
+  };
+
   const handleCreateMeeting = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -118,7 +145,7 @@ export const MeetingsPage: React.FC = () => {
       facilitator: 'Gestor de TI',
       participants: ['Gestor de TI', 'Equipe Operacional'],
       version: 'v0.1 (Rascunho)',
-      contextSummary: 'Rascunho criado para preparação de pauta e validação de template.',
+      contextSummary: 'Rascunho criado na sessão local para preparação de pauta e validação de template.',
       decisions: [],
       commitments: [],
       nextSteps: ['Revisar indicadores e registrar decisões em modo apresentação'],
@@ -128,6 +155,11 @@ export const MeetingsPage: React.FC = () => {
     setCreateModalOpen(false);
     setNewTitle('');
     setActiveWorkspace({ meetingId: created.id, mode: 'executive' });
+    pushToast({
+      title: 'Rascunho criado na sessão',
+      description: 'Alterações ficam disponíveis apenas nesta sessão até a conexão com o backend.',
+      tone: 'info',
+    });
   };
 
   if (loading) return <LoadingSkeletonGrid rows={5} />;
@@ -151,6 +183,7 @@ export const MeetingsPage: React.FC = () => {
           initialMode={activeWorkspace.mode}
           onClose={() => setActiveWorkspace(null)}
           onAddDecision={handleAddDecision}
+          onAddCommitment={handleAddCommitment}
           onTriggerPendingPdf={() =>
             pushToast({
               title: 'Geração oficial de PDF pendente no backend',
@@ -266,7 +299,7 @@ export const MeetingsPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'executive' })}
-                      className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors"
+                      className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
                     >
                       <ShieldCheck size={13} />
                       <span>Executiva</span>
@@ -274,7 +307,7 @@ export const MeetingsPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'presentation' })}
-                      className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-2.5 py-1 text-xs font-medium text-white dark:text-slate-950 transition-colors"
+                      className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-2.5 py-1 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
                     >
                       <MonitorPlay size={13} />
                       <span>Apresentar</span>
@@ -282,7 +315,7 @@ export const MeetingsPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'official_document' })}
-                      className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors"
+                      className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
                     >
                       <FileText size={13} />
                       <span>Documento</span>
@@ -321,7 +354,7 @@ export const MeetingsPage: React.FC = () => {
               <h3 className="font-display text-sm font-semibold">Documentos & Atas (TPL-01..04)</h3>
             </div>
             <p className="text-slate-600 dark:text-slate-400">
-              Visualização documental institucional ativa para todos os templates. Geração PDF automática em servidor marcada como pendente até homologação.
+              Visualização documental institucional ativa para todos os templates. Criação de rascunhos, decisões e compromissos opera apenas na sessão local até conexão com backend; geração automática de PDF está pendente.
             </p>
           </div>
         </aside>
@@ -332,7 +365,7 @@ export const MeetingsPage: React.FC = () => {
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         title="Preparar Nova Reunião"
-        subtitle="Selecione o tipo de rito e o template correspondente (TPL-01 a TPL-04)"
+        subtitle="Rascunho funcional apenas na sessão · Selecione o rito e o template (TPL-01 a TPL-04)"
       >
         <form onSubmit={handleCreateMeeting} className="space-y-3 text-xs">
           <div>

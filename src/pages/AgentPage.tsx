@@ -21,7 +21,7 @@ import type { AgentMessage, AgentMessageCategory } from '../types/ops';
 
 const QUICK_PROMPTS = [
   { label: 'Analisar chamados críticos', text: 'Analisar os chamados assistenciais sem técnico nominal e apontar riscos POP.' },
-  { label: 'Identificar gargalos', text: 'Quais os principais gargalos de fila acima de 48h hoje?' },
+  { label: 'Identificar gargalos', text: 'Quais os principais gargalos de fila acima de 24h corridas hoje?' },
   { label: 'Preparar Daily (TPL-01)', text: 'Preparar roteiro da Daily Operacional herdando as prioridades do Alinhamento Semanal.' },
   { label: 'Sugerir pendências', text: 'Identificar itens recorrentes que merecem virar pendência gerencial.' },
   { label: 'Apoiar auditoria', text: 'Listar pontos de atenção na amostra de auditoria atual.' },
@@ -29,11 +29,12 @@ const QUICK_PROMPTS = [
 ];
 
 const CATEGORY_LABELS: Record<AgentMessageCategory, { label: string; tone: 'nominal' | 'attention' | 'critical' | 'neutral' | 'unavailable' }> = {
-  sugestao: { label: 'Sugestão', tone: 'neutral' },
-  analise: { label: 'Análise', tone: 'nominal' },
-  aprovacao_pendente: { label: 'Ação pendente de aprovação', tone: 'attention' },
-  executada: { label: 'Ação executada', tone: 'nominal' },
-  falha: { label: 'Falha na execução', tone: 'critical' },
+  sugestao: { label: 'Sugestão (Demonstrativa)', tone: 'neutral' },
+  analise: { label: 'Análise (Demonstrativa)', tone: 'nominal' },
+  aprovacao_pendente: { label: 'Aguardando aprovação', tone: 'attention' },
+  executada: { label: 'Executado no backend', tone: 'nominal' },
+  bloqueada_demo: { label: 'Bloqueado (Sem backend conectado)', tone: 'attention' },
+  falha: { label: 'Rejeitada / Falha', tone: 'critical' },
   indisponivel: { label: 'Serviço indisponível', tone: 'unavailable' },
 };
 
@@ -99,7 +100,7 @@ export const AgentPage: React.FC = () => {
         if (m.id !== msgId || !m.proposedAction) return m;
         return {
           ...m,
-          category: approve ? 'indisponivel' : 'falha',
+          category: approve ? 'bloqueada_demo' : 'falha',
           proposedAction: {
             ...m.proposedAction,
             approvalStatus: approve ? 'approved_blocked_demo' : 'rejected',

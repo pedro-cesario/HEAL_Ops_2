@@ -26,12 +26,23 @@ export type OperationalSemanticState =
   | 'neutral'
   | 'unavailable';
 
+export type StaleTimeBasis = 'corridas' | 'uteis';
+
+export type PersistenceClassification =
+  | 'persistencia_real'
+  | 'sessao_local'
+  | 'demonstrativa'
+  | 'dependente_backend'
+  | 'nao_implementada';
+
 export interface EndpointConfig {
   portalFastApiUrl: string;
   r7RuntimeUrl: string;
   stagingUrl: string;
   glpiTicketUrlTemplate: string;
   autoRefreshSeconds: number;
+  staleTicketThresholdHours: number;
+  staleTicketTimeBasis: StaleTimeBasis;
   m365Configured: boolean;
   localAiUrl: string;
   pdfServiceConfigured: boolean;
@@ -252,6 +263,7 @@ export type AgentMessageCategory =
   | 'analise'
   | 'aprovacao_pendente'
   | 'executada'
+  | 'bloqueada_demo'
   | 'falha'
   | 'indisponivel';
 

@@ -22,7 +22,7 @@ import { ReportsAdapter } from '../services/opsAdapters';
 import type { ReportCatalogItem, ReportId } from '../types/ops';
 
 export const ReportsPage: React.FC = () => {
-  const { dataMode, refreshTrigger, triggerRefresh, setActiveModule, pushToast } = useOps();
+  const { dataMode, refreshTrigger, triggerRefresh, setActiveModule, pushToast, theme, endpointConfig } = useOps();
 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
@@ -188,7 +188,9 @@ export const ReportsPage: React.FC = () => {
                     {activeReport.title}
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                    {activeReport.summary}
+                    {activeReport.id === 'sem_atualizacao'
+                      ? `Tickets ativos sem interação válida acima de ${endpointConfig.staleTicketThresholdHours}h ${endpointConfig.staleTicketTimeBasis} (regra gerencial parametrizável).`
+                      : activeReport.summary}
                   </p>
                 </div>
 
@@ -257,13 +259,21 @@ export const ReportsPage: React.FC = () => {
                       <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
                       <YAxis tick={{ fontSize: 11 }} stroke="#64748b" />
-                      <Tooltip />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: theme === 'dark' ? '#111923' : '#FFFFFF',
+                          borderColor: theme === 'dark' ? '#243242' : '#E2E8F0',
+                          color: theme === 'dark' ? '#F1F5F9' : '#0F172A',
+                          fontSize: '12px',
+                          borderRadius: '6px',
+                        }}
+                      />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Line
                         type="monotone"
                         dataKey="primary"
                         name={activeReport.primaryLabel}
-                        stroke="#0F5E59"
+                        stroke={theme === 'dark' ? '#2DD4BF' : '#0F5E59'}
                         strokeWidth={2}
                         dot={{ r: 3 }}
                       />
@@ -284,12 +294,20 @@ export const ReportsPage: React.FC = () => {
                       <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
                       <YAxis tick={{ fontSize: 11 }} stroke="#64748b" />
-                      <Tooltip />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: theme === 'dark' ? '#111923' : '#FFFFFF',
+                          borderColor: theme === 'dark' ? '#243242' : '#E2E8F0',
+                          color: theme === 'dark' ? '#F1F5F9' : '#0F172A',
+                          fontSize: '12px',
+                          borderRadius: '6px',
+                        }}
+                      />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Bar
                         dataKey="primary"
                         name={activeReport.primaryLabel}
-                        fill="#0F5E59"
+                        fill={theme === 'dark' ? '#2DD4BF' : '#0F5E59'}
                         radius={[3, 3, 0, 0]}
                       />
                       {activeReport.secondaryLabel && (
@@ -308,15 +326,16 @@ export const ReportsPage: React.FC = () => {
 
             {/* Drilldown Table */}
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] overflow-hidden">
-              <div className="border-b border-slate-200 dark:border-[#243242] px-4 py-2.5 flex items-center justify-between">
+              <div className="border-b border-slate-200 dark:border-[#243242] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                  Detalhamento Analítico (Dados demonstrativos)
+                  Detalhamento Analítico (Dados demonstrativos · Exportação oficial dependente de backend)
                 </h3>
                 <span className="font-mono text-[11px] text-slate-400">
                   {activeReport.rows.length} linha(s)
                 </span>
               </div>
-              <table className="w-full text-left text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
                 <thead className="border-b border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] text-slate-600 dark:text-slate-300">
                   <tr>
                     <th className="px-4 py-2 font-semibold">Dimensão</th>
@@ -344,6 +363,7 @@ export const ReportsPage: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </>
         )}

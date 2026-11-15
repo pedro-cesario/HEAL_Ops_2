@@ -16,8 +16,8 @@ import {
   Users,
 } from 'lucide-react';
 import { useOps } from '../context/OpsContext';
-import { INTEGRATION_STATUS_META } from '../design/tokens';
-import type { RuntimeDataMode } from '../types/ops';
+import { INTEGRATION_STATUS_META, PERSISTENCE_LABELS } from '../design/tokens';
+import type { RuntimeDataMode, StaleTimeBasis } from '../types/ops';
 
 type SettingsSectionId =
   | 'geral'
@@ -56,6 +56,44 @@ const SETTINGS_SECTIONS: {
   { id: 'aparencia', label: 'Aparência', icon: Palette },
 ];
 
+const PERSISTENCE_MATRIX: { capability: string; classification: string; note: string }[] = [
+  {
+    capability: 'Tema claro/escuro, filtro de chamados e leitura dos 7 módulos',
+    classification: PERSISTENCE_LABELS.sessao_local,
+    note: 'Preferência visual salva no navegador; dados seguem o modo de execução ativo.',
+  },
+  {
+    capability: 'Parâmetros editáveis (endpoints, URL GLPI, regra de horas sem atualização)',
+    classification: PERSISTENCE_LABELS.sessao_local,
+    note: 'Aplicados imediatamente nos drawers, KPIs e templates durante a sessão.',
+  },
+  {
+    capability: 'Reuniões (rascunhos, decisões ao vivo e compromissos recíprocos)',
+    classification: PERSISTENCE_LABELS.sessao_local,
+    note: 'Gravação definitiva depende da integração com endpoint do FastAPI (:3312).',
+  },
+  {
+    capability: 'Auditoria manual de amostra e checklist POP por chamado',
+    classification: PERSISTENCE_LABELS.sessao_local,
+    note: 'Avaliações ficam na sessão local até homologação do backend de auditoria.',
+  },
+  {
+    capability: 'Indicadores, carteira de equipe, relatórios e preview de amostragem',
+    classification: PERSISTENCE_LABELS.demonstrativa,
+    note: 'Dataset isolado e conciliado para validação visual sem alterar produção.',
+  },
+  {
+    capability: 'Amostragem estratificada oficial, exportação CSV/PDF e ações do Agente IA',
+    classification: PERSISTENCE_LABELS.dependente_backend,
+    note: 'Bloqueadas para gravação real sem conexão autenticada com :3312 / R7 :3310.',
+  },
+  {
+    capability: 'Microsoft 365 (Calendário Outlook e Caixa de Entrada)',
+    classification: PERSISTENCE_LABELS.nao_implementada,
+    note: 'Sem OAuth/Graph conectado; apenas blocos preparados de contrato.',
+  },
+];
+
 export const SettingsPage: React.FC = () => {
   const {
     theme,
@@ -76,15 +114,24 @@ export const SettingsPage: React.FC = () => {
   const [stagingInput, setStagingInput] = useState(endpointConfig.stagingUrl);
   const [aiInput, setAiInput] = useState(endpointConfig.localAiUrl);
   const [refreshSec, setRefreshSec] = useState(endpointConfig.autoRefreshSeconds);
+  const [staleHoursInput, setStaleHoursInput] = useState(endpointConfig.staleTicketThresholdHours);
+  const [staleBasisInput, setStaleBasisInput] = useState<StaleTimeBasis>(endpointConfig.staleTicketTimeBasis);
 
   const handleSaveConfig = () => {
+    const safeHours = Math.min(168, Math.max(1, Number(staleHoursInput) || 24));
+    const safeRefresh = Math.min(600, Math.max(15, Number(refreshSec) || 60));
+    setStaleHoursInput(safeHours);
+    setRefreshSec(safeRefresh);
+
     updateEndpointConfig({
       glpiTicketUrlTemplate: glpiInput,
       portalFastApiUrl: portalInput,
       r7RuntimeUrl: r7Input,
       stagingUrl: stagingInput,
       localAiUrl: aiInput,
-      autoRefreshSeconds: refreshSec,
+      autoRefreshSeconds: safeRefresh,
+      staleTicketThresholdHours: safeHours,
+      staleTicketTimeBasis: staleBasisInput,
     });
     updateIntegrationEndpoint('int-portal', portalInput);
     updateIntegrationEndpoint('int-r7', r7Input);
@@ -93,15 +140,69 @@ export const SettingsPage: React.FC = () => {
     updateIntegrationEndpoint('int-ai', aiInput);
     pushToast({
       title: 'Configurações atualizadas na sessão',
-      description: 'As integrações mantêm o status de pendente/não configurado até a homologação real com os serviços.',
+      description: `Regra de atualização (${safeHours}h ${staleBasisInput}) aplicada. Serviços mantêm status pendente até conexão real.`,
       tone: 'success',
     });
   };
 
+  const renderStaleRuleEditor = () => (
+    <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-4 space-y-3">
+      <div>
+        <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
+          Parâmetro de Chamados Sem Atualização (Regra Editável)
+        </h3>
+        <p className="mt-0.5 text-slate-600 dark:text-slate-400">
+          Padrão de homologação adotado: <strong>24 horas corridas</strong> (editável nesta sessão para conciliação futura com o POP oficial e o backend FastAPI).
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+            Limite de horas sem atualização
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={168}
+            value={staleHoursInput}
+            onChange={(e) => setStaleHoursInput(Number(e.target.value))}
+            className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-3 py-2 font-mono"
+          />
+        </div>
+        <div>
+          <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+            Base de contagem
+          </label>
+          <select
+            value={staleBasisInput}
+            onChange={(e) => setStaleBasisInput(e.target.value as StaleTimeBasis)}
+            className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-3 py-2"
+          >
+            <option value="corridas">Horas corridas (padrão oficial adotado)</option>
+            <option value="uteis">Horas úteis (conciliação alternativa)</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <span className="text-[11px] text-amber-700 dark:text-amber-400 font-mono">
+          {PERSISTENCE_LABELS.sessao_local} · Atualiza KPIs, TicketDrawer, Relatórios e TPL-01/TPL-02
+        </span>
+        <button
+          type="button"
+          onClick={handleSaveConfig}
+          className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3.5 py-1.5 font-medium text-white dark:text-slate-950 whitespace-nowrap"
+        >
+          <Save size={14} />
+          <span>Aplicar parâmetro</span>
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-[1600px] mx-auto">
-      {/* Left Navigation (3 cols) */}
-      <aside className="lg:col-span-3 rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-2 space-y-0.5 self-start">
+      {/* Left / Top Navigation */}
+      <aside className="lg:col-span-3 rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-2 flex lg:flex-col gap-1 overflow-x-auto self-start">
         {SETTINGS_SECTIONS.map((item) => {
           const Icon = item.icon;
           const active = section === item.id;
@@ -110,14 +211,14 @@ export const SettingsPage: React.FC = () => {
               key={item.id}
               type="button"
               onClick={() => setSection(item.id)}
-              className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
+              className={`flex lg:w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 active
                   ? 'bg-[#0F5E59]/10 text-[#0F5E59] dark:bg-[#2DD4BF]/12 dark:text-[#2DD4BF]'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#18222F]'
               }`}
             >
               <Icon size={15} className="shrink-0" />
-              <span className="truncate">{item.label}</span>
+              <span className="lg:truncate">{item.label}</span>
             </button>
           );
         })}
@@ -171,6 +272,34 @@ export const SettingsPage: React.FC = () => {
               <Save size={14} />
               <span>Salvar parâmetros gerais</span>
             </button>
+
+            <div className="pt-2 space-y-2">
+              <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Classificação Transparente de Persistência e Estados
+              </h3>
+              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-[#243242]">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50 dark:bg-[#18222F] text-[11px] uppercase text-slate-500">
+                    <tr>
+                      <th className="p-2.5">Capacidade / Módulo</th>
+                      <th className="p-2.5">Classificação</th>
+                      <th className="p-2.5">Comportamento atual</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-[#243242]">
+                    {PERSISTENCE_MATRIX.map((row) => (
+                      <tr key={row.capability}>
+                        <td className="p-2.5 font-medium text-slate-900 dark:text-slate-100">{row.capability}</td>
+                        <td className="p-2.5 font-mono text-[11px] text-[#0F5E59] dark:text-[#2DD4BF] whitespace-nowrap">
+                          {row.classification}
+                        </td>
+                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{row.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
@@ -191,7 +320,7 @@ export const SettingsPage: React.FC = () => {
                 return (
                   <div key={intItem.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">
                           {intItem.name}
                         </span>
@@ -205,7 +334,7 @@ export const SettingsPage: React.FC = () => {
                         <p className="mt-0.5 text-[11px] text-slate-500">{intItem.auditNote}</p>
                       )}
                     </div>
-                    <div className="font-mono text-[11px] text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-[#18222F] border border-slate-200 dark:border-[#243242] rounded px-2.5 py-1.5 shrink-0 max-w-xs truncate">
+                    <div className="font-mono text-[11px] text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-[#18222F] border border-slate-200 dark:border-[#243242] rounded px-2.5 py-1.5 shrink-0 max-w-full sm:max-w-xs truncate">
                       {intItem.endpoint}
                     </div>
                   </div>
@@ -288,7 +417,7 @@ export const SettingsPage: React.FC = () => {
             <h2 className="font-display text-base font-semibold">Microsoft 365 (Agenda e E-mails)</h2>
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-4 space-y-2">
               <div className="font-semibold text-slate-800 dark:text-slate-200">
-                Estado atual: Não configurado
+                Estado atual: Não configurado ({PERSISTENCE_LABELS.nao_implementada})
               </div>
               <p className="text-slate-600 dark:text-slate-400">
                 A auditoria técnica confirmou que a integração com Microsoft Graph (Calendário e Outlook) ainda não está implementada. O frontend mantém os blocos Minha Agenda e E-mails e Pendências preparados para receber os contratos OAuth/backend futuros.
@@ -329,7 +458,7 @@ export const SettingsPage: React.FC = () => {
             <p className="text-slate-600 dark:text-slate-400">
               Paleta institucional em verde-petróleo e ardósia neutra com alternância imediata entre tema claro e escuro.
             </p>
-            <div className="grid grid-cols-2 gap-3 max-w-md">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
               <button
                 type="button"
                 onClick={() => setTheme('light')}
@@ -374,10 +503,10 @@ export const SettingsPage: React.FC = () => {
                 <p>Perfis de acesso (Gestor Operacional, Referência Técnica, Auditor, Visualização) serão vinculados à autenticação corporativa na etapa de homologação com o FastAPI (:3312).</p>
               )}
               {section === 'pop' && (
-                <p>As regras de conformidade POP (incluindo exceções de fluxos verticais para chamados sem técnico nominal) são avaliadas exclusivamente pelo backend para não duplicar nem inventar regras fictícias no navegador.</p>
+                <p>As regras de conformidade POP (incluindo exceções de fluxos verticais para chamados sem técnico nominal) são avaliadas pelo backend; o limiar de chamados sem atualização é parametrizável abaixo para conciliação oficial.</p>
               )}
               {section === 'indicadores' && (
-                <p>Todos os 16 indicadores do módulo Relatórios possuem origem e regra explícita contra dupla contagem entre chamados solucionados e fechados.</p>
+                <p>Todos os 16 indicadores do módulo Relatórios possuem origem e regra explícita contra dupla contagem entre chamados solucionados e fechados. O parâmetro de chamados sem atualização abaixo ajusta a visão operacional na sessão.</p>
               )}
               {section === 'auditoria' && (
                 <p>A seleção aleatória oficial por amostragem estratificada (Técnico, Macroárea, Categoria, Status, Grupo, Período) aguarda implementação do serviço dedicado no backend.</p>
@@ -395,9 +524,12 @@ export const SettingsPage: React.FC = () => {
                 <p>A geração oficial de PDF para arquivamento encontra-se pendente de serviço server-side; o portal disponibiliza visualização documental institucional estruturada e compatível com impressão.</p>
               )}
             </div>
+
+            {(section === 'pop' || section === 'indicadores') && renderStaleRuleEditor()}
           </div>
         )}
       </section>
     </div>
   );
 };
+

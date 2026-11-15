@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
   CheckSquare,
   FileText,
+  LayoutGrid,
+  LogOut,
   MonitorPlay,
   Printer,
   ShieldCheck,
-  X,
 } from 'lucide-react';
 import { Modal } from '../components/common/UiPrimitives';
+import { useOps } from '../context/OpsContext';
 import { DEMO_KPIS, DEMO_TEAM, DEMO_TICKETS, DEMO_WEEKLY_PRIORITIES } from '../demo/demoData';
 import type { MeetingRecord } from '../types/ops';
 
@@ -27,31 +29,77 @@ export const MeetingTemplateWorkspace: React.FC<{
   initialMode?: TemplateViewMode;
   onClose: () => void;
   onAddDecision: (meetingId: string, decision: string, owner: string, dueDate: string) => void;
+  onAddCommitment?: (
+    meetingId: string,
+    party: 'Colaborador' | 'Gestor' | 'Equipe',
+    owner: string,
+    action: string,
+    dueDate: string
+  ) => void;
   onTriggerPendingPdf: () => void;
-}> = ({ meeting, initialMode = 'executive', onClose, onAddDecision, onTriggerPendingPdf }) => {
+}> = ({
+  meeting,
+  initialMode = 'executive',
+  onClose,
+  onAddDecision,
+  onAddCommitment,
+  onTriggerPendingPdf,
+}) => {
+  const { endpointConfig, dataMode } = useOps();
   const [mode, setMode] = useState<TemplateViewMode>(initialMode);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [freeMode, setFreeMode] = useState(false);
+
   const [decisionModalOpen, setDecisionModalOpen] = useState(false);
   const [newDecisionText, setNewDecisionText] = useState('');
   const [newDecisionOwner, setNewDecisionOwner] = useState(meeting.participants[0] || 'Gestor de TI');
   const [newDecisionDue, setNewDecisionDue] = useState('Hoje');
+
+  const [commitmentModalOpen, setCommitmentModalOpen] = useState(false);
+  const [newCommitmentParty, setNewCommitmentParty] = useState<'Colaborador' | 'Gestor' | 'Equipe'>('Colaborador');
+  const [newCommitmentOwner, setNewCommitmentOwner] = useState(meeting.participants[0] || 'Gestor de TI');
+  const [newCommitmentAction, setNewCommitmentAction] = useState('');
+  const [newCommitmentDue, setNewCommitmentDue] = useState('Esta semana');
+
   const [detailModalContent, setDetailModalContent] = useState<{ title: string; body: string } | null>(null);
+
+  const thresholdHours = Math.max(1, endpointConfig.staleTicketThresholdHours || 24);
+  const timeBasisLabel = endpointConfig.staleTicketTimeBasis === 'uteis' ? 'úteis' : 'corridas';
+  const staleRuleLabel = `> ${thresholdHours}h ${timeBasisLabel}`;
+
+  const dynamicTickets = DEMO_TICKETS.map((t) => {
+    const baseReasons = t.inclusionReasons.filter((r) => r !== 'sem_atualizacao');
+    const isStale = t.hoursWithoutUpdate > thresholdHours;
+    return {
+      ...t,
+      inclusionReasons: isStale ? [...baseReasons, 'sem_atualizacao'] : baseReasons,
+    };
+  });
+  const noUpdateTickets = dynamicTickets.filter((t) => t.inclusionReasons.includes('sem_atualizacao'));
+
+  const dynamicKpis = DEMO_KPIS.map((k) => {
+    if (k.key !== 'sem_atualizacao') return k;
+    return {
+      ...k,
+      value: noUpdateTickets.length,
+      subtitle: `Regra ref.: ${staleRuleLabel} (parametrizável)`,
+    };
+  });
 
   // Build slides per template code (TPL-01..TPL-04)
   const slides: SlideItem[] = (() => {
     if (meeting.templateCode === 'TPL-01') {
-      const noUpdate = DEMO_TICKETS.filter((t) => t.inclusionReasons.includes('sem_atualizacao'));
       return [
         {
           title: '1. Resultados Anteriores & Backlog',
           subtitle: 'Panorama consolidado herdado da operação diária',
           content: (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {DEMO_KPIS.slice(0, 4).map((k) => (
+              {dynamicKpis.slice(0, 4).map((k) => (
                 <div key={k.key} className="rounded-lg border border-slate-200 dark:border-[#243242] p-4 bg-white dark:bg-[#111923]">
-                  <span className="text-xs text-slate-500">{k.label}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">{k.label}</span>
                   <div className="mt-1 font-mono text-3xl font-bold tabular-nums">{k.value}</div>
-                  <span className="text-xs text-slate-500">{k.subtitle}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">{k.subtitle}</span>
                 </div>
               ))}
             </div>
@@ -64,12 +112,14 @@ export const MeetingTemplateWorkspace: React.FC<{
             <div className="space-y-2.5">
               {DEMO_WEEKLY_PRIORITIES.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-[#243242] p-3.5 bg-white dark:bg-[#111923]">
-                  <div>
-                    <div className="font-mono text-xs text-slate-500">#{p.ticketId} · {p.owner} · Prazo {p.dueDate || '—'}</div>
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                      #{p.ticketId} · {p.owner} · Prazo {p.dueDate || '—'}
+                    </div>
                     <div className="text-base font-semibold text-slate-900 dark:text-slate-100">{p.title}</div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">Próxima ação: {p.nextAction}</div>
                   </div>
-                  <span className="text-xs font-medium text-[#0F5E59] dark:text-[#2DD4BF]">{p.status}</span>
+                  <span className="text-xs font-medium text-[#0F5E59] dark:text-[#2DD4BF] shrink-0">{p.status}</span>
                 </div>
               ))}
             </div>
@@ -77,32 +127,38 @@ export const MeetingTemplateWorkspace: React.FC<{
         },
         {
           title: '3. Chamados Sem Atualização & Impedimentos',
-          subtitle: 'Itens acima de 48h úteis e bloqueios por macroárea',
+          subtitle: `Itens acima de ${thresholdHours}h ${timeBasisLabel} e bloqueios por macroárea`,
           content: (
             <div className="space-y-2.5">
-              {noUpdate.map((t) => (
-                <div key={t.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-[#243242] p-3.5 bg-white dark:bg-[#111923]">
-                  <div>
-                    <div className="font-mono text-xs text-amber-700 dark:text-amber-400">
-                      #{t.id} · {t.hoursWithoutUpdate}h sem atualização · {t.techName || 'Sem técnico'}
+              {noUpdateTickets.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Nenhum chamado acima da referência de {thresholdHours}h {timeBasisLabel}.
+                </p>
+              ) : (
+                noUpdateTickets.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-[#243242] p-3.5 bg-white dark:bg-[#111923]">
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs text-amber-700 dark:text-amber-400">
+                        #{t.id} · {t.hoursWithoutUpdate}h sem atualização · {t.techName || 'Sem técnico'}
+                      </div>
+                      <div className="text-base font-medium text-slate-900 dark:text-slate-100">{t.title}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{t.classificationReason}</div>
                     </div>
-                    <div className="text-base font-medium">{t.title}</div>
-                    <div className="text-xs text-slate-500">{t.classificationReason}</div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDetailModalContent({
+                          title: `Chamado #${t.id}`,
+                          body: `${t.title}\n\nMacroárea: ${t.macroArea}\nGrupo: ${t.group}\nMotivo: ${t.classificationReason}`,
+                        })
+                      }
+                      className="rounded border border-slate-200 dark:border-[#243242] px-3 py-1.5 text-xs font-medium hover:border-[#0F5E59] whitespace-nowrap shrink-0"
+                    >
+                      Inspecionar
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDetailModalContent({
-                        title: `Chamado #${t.id}`,
-                        body: `${t.title}\n\nMacroárea: ${t.macroArea}\nGrupo: ${t.group}\nMotivo: ${t.classificationReason}`,
-                      })
-                    }
-                    className="rounded border border-slate-200 dark:border-[#243242] px-3 py-1.5 text-xs font-medium"
-                  >
-                    Inspecionar
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           ),
         },
@@ -133,15 +189,106 @@ export const MeetingTemplateWorkspace: React.FC<{
     }
 
     if (meeting.templateCode === 'TPL-02') {
+      const openCount = dynamicTickets.length;
+      const popCount = dynamicTickets.filter((t) => t.isPopNonCompliant).length;
       return [
-        { title: 'Etapa 1 de 8 · Abertura', subtitle: 'Contexto institucional e objetivos da semana', content: <p className="text-base leading-relaxed">{meeting.contextSummary}</p> },
-        { title: 'Etapa 2 de 8 · Resultados da Semana Anterior', subtitle: 'Indicadores deduplicados de entrega e POP', content: <div className="grid grid-cols-3 gap-4"><div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4"><span className="text-xs text-slate-500">Únicos Concluídos</span><div className="font-mono text-3xl font-bold mt-1">102</div></div><div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4"><span className="text-xs text-slate-500">Tempo Médio</span><div className="font-mono text-3xl font-bold mt-1">14,2h</div></div><div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4"><span className="text-xs text-slate-500">Conformidade POP</span><div className="font-mono text-3xl font-bold mt-1">92%</div></div></div> },
-        { title: 'Etapa 3 de 8 · Backlog e Pendências', subtitle: '42 chamados ativos · 2 em desconformidade POP', content: <p className="text-base">Revisão dos itens sem atualização &gt; 48h e pendências críticas de fornecedores.</p> },
-        { title: 'Etapa 4 de 8 · Áreas e Referências Técnicas', subtitle: 'Cobertura assistencial, sistemas, infraestrutura e corporativo', content: <div className="grid grid-cols-2 gap-3">{DEMO_TEAM.slice(0, 4).map((m) => <div key={m.id} className="rounded border border-slate-200 dark:border-[#243242] p-3 text-sm"><strong>{m.macroArea}</strong> · {m.name} ({m.activeTickets} ativos)</div>)}</div> },
-        { title: 'Etapa 5 de 8 · Projetos e GMUD', subtitle: 'Mudanças programadas e riscos operacionais', content: <p className="text-base">GMUD-042 (Substituição de switch de borda Bloco Administrativo) prevista para janela noturna após 19h.</p> },
-        { title: 'Etapa 6 de 8 · Metas e Prioridades', subtitle: 'Definição das 5 prioridades oficiais herdadas pela Daily e Visão Geral', content: <ul className="space-y-2 text-sm">{DEMO_WEEKLY_PRIORITIES.map((p) => <li key={p.id} className="rounded border border-slate-200 dark:border-[#243242] p-2.5"><strong>#{p.ticketId}</strong> — {p.title} ({p.owner})</li>)}</ul> },
-        { title: 'Etapa 7 de 8 · Acordos e Responsabilidades', subtitle: 'Decisões registradas e prazos pactuados', content: <ul className="space-y-2 text-sm">{meeting.decisions.map((d) => <li key={d.id} className="rounded border border-slate-200 dark:border-[#243242] p-3"><strong>{d.decision}</strong> · {d.owner} (Prazo: {d.dueDate})</li>)}</ul> },
-        { title: 'Etapa 8 de 8 · Encerramento', subtitle: 'Próximos passos e publicação da ata oficial', content: <ul className="list-disc pl-5 space-y-2 text-base">{meeting.nextSteps.map((s, i) => <li key={i}>{s}</li>)}</ul> },
+        {
+          title: 'Etapa 1 de 8 · Abertura',
+          subtitle: 'Contexto institucional e objetivos da semana',
+          content: <p className="text-base leading-relaxed">{meeting.contextSummary}</p>,
+        },
+        {
+          title: 'Etapa 2 de 8 · Resultados da Semana Anterior',
+          subtitle: 'Indicadores deduplicados de entrega e POP (base demonstrativa)',
+          content: (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4">
+                <span className="text-xs text-slate-500">Únicos Concluídos (Semana)</span>
+                <div className="font-mono text-3xl font-bold mt-1 tabular-nums">102</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4">
+                <span className="text-xs text-slate-500">Tempo Médio de Atendimento</span>
+                <div className="font-mono text-3xl font-bold mt-1 tabular-nums">14,2h</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4">
+                <span className="text-xs text-slate-500">Conformidade POP</span>
+                <div className="font-mono text-3xl font-bold mt-1 tabular-nums">92%</div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          title: 'Etapa 3 de 8 · Backlog e Pendências',
+          subtitle: `${openCount} chamados ativos · ${popCount} em desconformidade POP`,
+          content: (
+            <p className="text-base leading-relaxed">
+              Revisão dos {noUpdateTickets.length} item(ns) sem atualização ({staleRuleLabel}) e pendências críticas de fornecedores.
+            </p>
+          ),
+        },
+        {
+          title: 'Etapa 4 de 8 · Áreas e Referências Técnicas',
+          subtitle: 'Cobertura assistencial, sistemas, infraestrutura e corporativo',
+          content: (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {DEMO_TEAM.slice(0, 4).map((m) => (
+                <div key={m.id} className="rounded border border-slate-200 dark:border-[#243242] p-3 text-sm">
+                  <strong>{m.macroArea}</strong> · {m.name} ({m.activeTickets} ativos)
+                </div>
+              ))}
+            </div>
+          ),
+        },
+        {
+          title: 'Etapa 5 de 8 · Projetos e GMUD',
+          subtitle: 'Mudanças programadas e riscos operacionais',
+          content: (
+            <p className="text-base leading-relaxed">
+              GMUD-042 (Substituição de switch de borda Bloco Administrativo) prevista para janela noturna após 19h.
+            </p>
+          ),
+        },
+        {
+          title: 'Etapa 6 de 8 · Metas e Prioridades',
+          subtitle: 'Definição das 5 prioridades oficiais herdadas pela Daily e Visão Geral',
+          content: (
+            <ul className="space-y-2 text-sm">
+              {DEMO_WEEKLY_PRIORITIES.map((p) => (
+                <li key={p.id} className="rounded border border-slate-200 dark:border-[#243242] p-2.5">
+                  <strong>#{p.ticketId}</strong> — {p.title} ({p.owner})
+                </li>
+              ))}
+            </ul>
+          ),
+        },
+        {
+          title: 'Etapa 7 de 8 · Acordos e Responsabilidades',
+          subtitle: 'Decisões registradas e prazos pactuados',
+          content: (
+            <ul className="space-y-2 text-sm">
+              {meeting.decisions.length === 0 ? (
+                <li className="text-slate-500">Nenhuma decisão registrada ainda nesta sessão.</li>
+              ) : (
+                meeting.decisions.map((d) => (
+                  <li key={d.id} className="rounded border border-slate-200 dark:border-[#243242] p-3">
+                    <strong>{d.decision}</strong> · {d.owner} (Prazo: {d.dueDate})
+                  </li>
+                ))
+              )}
+            </ul>
+          ),
+        },
+        {
+          title: 'Etapa 8 de 8 · Encerramento',
+          subtitle: 'Próximos passos e publicação da ata oficial',
+          content: (
+            <ul className="list-disc pl-5 space-y-2 text-base">
+              {meeting.nextSteps.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          ),
+        },
       ];
     }
 
@@ -247,7 +394,7 @@ export const MeetingTemplateWorkspace: React.FC<{
               'Monitoramento SNMP preparado para validação imediata',
             ].map((chk, idx) => (
               <div key={idx} className="flex items-center gap-2 rounded border border-slate-200 dark:border-[#243242] p-2.5">
-                <CheckSquare size={15} className="text-[#0F5E59] dark:text-[#2DD4BF]" />
+                <CheckSquare size={15} className="text-[#0F5E59] dark:text-[#2DD4BF] shrink-0" />
                 <span>{chk}</span>
               </div>
             ))}
@@ -256,6 +403,30 @@ export const MeetingTemplateWorkspace: React.FC<{
       },
     ];
   })();
+
+  useEffect(() => {
+    if (mode !== 'presentation') return;
+    if (decisionModalOpen || commitmentModalOpen || Boolean(detailModalContent)) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setSlideIndex((i) => Math.min(slides.length - 1, i + 1));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setSlideIndex((i) => Math.max(0, i - 1));
+      } else if (e.key === 'Escape') {
+        if (freeMode) {
+          setFreeMode(false);
+        } else {
+          setMode('executive');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mode, slides.length, decisionModalOpen, commitmentModalOpen, detailModalContent, freeMode]);
 
   const currentSlide = slides[Math.min(slideIndex, slides.length - 1)];
 
@@ -267,14 +438,15 @@ export const MeetingTemplateWorkspace: React.FC<{
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-[#18222F]"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-[#18222F] whitespace-nowrap"
           >
             <ArrowLeft size={14} />
             <span>Voltar</span>
           </button>
           <div className="min-w-0">
-            <div className="text-[11px] font-mono text-[#0F5E59] dark:text-[#2DD4BF]">
+            <div className="text-[11px] font-mono text-[#0F5E59] dark:text-[#2DD4BF] truncate">
               {meeting.templateCode} · {meeting.type} · {meeting.version}
+              {dataMode === 'demo' ? ' · Sessão demonstrativa' : ''}
             </div>
             <h2 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
               {meeting.title}
@@ -283,7 +455,7 @@ export const MeetingTemplateWorkspace: React.FC<{
         </div>
 
         {/* 3 Experiences Switcher */}
-        <div className="flex items-center gap-1 rounded-md bg-slate-100 dark:bg-[#18222F] p-1 text-xs">
+        <div className="flex items-center gap-1 overflow-x-auto rounded-md bg-slate-100 dark:bg-[#18222F] p-1 text-xs">
           <button
             type="button"
             onClick={() => setMode('executive')}
@@ -301,6 +473,7 @@ export const MeetingTemplateWorkspace: React.FC<{
             onClick={() => {
               setMode('presentation');
               setSlideIndex(0);
+              setFreeMode(false);
             }}
             className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium transition-colors whitespace-nowrap ${
               mode === 'presentation'
@@ -331,7 +504,12 @@ export const MeetingTemplateWorkspace: React.FC<{
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div className="lg:col-span-8 space-y-3.5">
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-4 space-y-2">
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Contexto</h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Contexto</h3>
+                <span className="text-[11px] font-mono text-amber-700 dark:text-amber-400">
+                  Funcional apenas na sessão
+                </span>
+              </div>
               <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
                 {meeting.contextSummary}
               </p>
@@ -350,39 +528,58 @@ export const MeetingTemplateWorkspace: React.FC<{
             )}
 
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="font-display text-sm font-semibold">Decisões e Responsáveis</h3>
                 <button
                   type="button"
                   onClick={() => setDecisionModalOpen(true)}
-                  className="text-xs font-medium text-[#0F5E59] dark:text-[#2DD4BF] hover:underline"
+                  className="text-xs font-medium text-[#0F5E59] dark:text-[#2DD4BF] hover:underline whitespace-nowrap"
                 >
                   + Registrar decisão
                 </button>
               </div>
               <div className="divide-y divide-slate-100 dark:divide-[#1D2836]">
-                {meeting.decisions.map((d) => (
-                  <div key={d.id} className="py-2 text-xs flex items-center justify-between gap-3">
-                    <span className="font-medium text-slate-900 dark:text-slate-100">{d.decision}</span>
-                    <span className="font-mono text-slate-500 shrink-0">{d.owner} · {d.dueDate}</span>
-                  </div>
-                ))}
+                {meeting.decisions.length === 0 ? (
+                  <p className="py-2 text-xs text-slate-500">Nenhuma decisão registrada ainda.</p>
+                ) : (
+                  meeting.decisions.map((d) => (
+                    <div key={d.id} className="py-2 text-xs flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+                      <span className="font-medium text-slate-900 dark:text-slate-100">{d.decision}</span>
+                      <span className="font-mono text-slate-500 shrink-0">{d.owner} · {d.dueDate}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
 
           <div className="lg:col-span-4 space-y-3.5">
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-4 space-y-2 text-xs">
-              <h3 className="font-display text-sm font-semibold">Compromissos Pactuados</h3>
-              {meeting.commitments.map((c) => (
-                <div key={c.id} className="rounded border border-slate-200 dark:border-[#243242] p-2.5">
-                  <div className="flex justify-between font-medium text-[#0F5E59] dark:text-[#2DD4BF]">
-                    <span>{c.party}: {c.owner}</span>
-                    <span className="font-mono">{c.dueDate}</span>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-display text-sm font-semibold">Compromissos Pactuados</h3>
+                {onAddCommitment && (
+                  <button
+                    type="button"
+                    onClick={() => setCommitmentModalOpen(true)}
+                    className="text-xs font-medium text-[#0F5E59] dark:text-[#2DD4BF] hover:underline whitespace-nowrap"
+                  >
+                    + Compromisso
+                  </button>
+                )}
+              </div>
+              {meeting.commitments.length === 0 ? (
+                <p className="text-slate-500">Nenhum compromisso registrado ainda.</p>
+              ) : (
+                meeting.commitments.map((c) => (
+                  <div key={c.id} className="rounded border border-slate-200 dark:border-[#243242] p-2.5">
+                    <div className="flex justify-between font-medium text-[#0F5E59] dark:text-[#2DD4BF]">
+                      <span>{c.party}: {c.owner}</span>
+                      <span className="font-mono">{c.dueDate}</span>
+                    </div>
+                    <p className="mt-1 text-slate-700 dark:text-slate-300">{c.action}</p>
                   </div>
-                  <p className="mt-1 text-slate-700 dark:text-slate-300">{c.action}</p>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-4 space-y-2 text-xs">
@@ -399,37 +596,108 @@ export const MeetingTemplateWorkspace: React.FC<{
 
       {/* MODE 2: MODO APRESENTAÇÃO (1366x768 optimized, zero excessive scroll) */}
       {mode === 'presentation' && (
-        <div className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-6 min-h-[540px]">
+        <div className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-5 sm:p-6 min-h-[520px]">
           <div className="space-y-4">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-[#243242] pb-4">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 dark:border-[#243242] pb-4">
+              <div className="min-w-0">
                 <div className="font-mono text-xs font-semibold text-[#0F5E59] dark:text-[#2DD4BF]">
-                  {meeting.templateCode} · {meeting.type} · Slide {slideIndex + 1} de {slides.length}
+                  {meeting.templateCode} · {meeting.type} ·{' '}
+                  {freeMode ? `Modo Livre (${slides.length} etapas)` : `Slide ${slideIndex + 1} de ${slides.length}`}
                 </div>
-                <h3 className="mt-1 font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  {currentSlide.title}
+                <h3 className="mt-1 font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  {freeMode ? 'Mapa Livre de Etapas do Rito' : currentSlide.title}
                 </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{currentSlide.subtitle}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {freeMode
+                    ? 'Selecione qualquer etapa diretamente ou use as setas do teclado no modo guiado.'
+                    : currentSlide.subtitle}
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setDecisionModalOpen(true)}
-                className="rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3.5 py-2 text-xs font-medium text-white dark:text-slate-950 whitespace-nowrap shrink-0"
-              >
-                + Registrar decisão ao vivo
-              </button>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setFreeMode((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                    freeMode
+                      ? 'border-[#0F5E59] bg-[#0F5E59]/10 text-[#0F5E59] dark:border-[#2DD4BF] dark:bg-[#2DD4BF]/15 dark:text-[#2DD4BF]'
+                      : 'border-slate-200 dark:border-[#243242] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#18222F]'
+                  }`}
+                >
+                  <LayoutGrid size={13} />
+                  <span>{freeMode ? 'Modo Guiado' : 'Modo Livre'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDecisionModalOpen(true)}
+                  className="rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 whitespace-nowrap"
+                >
+                  + Registrar decisão ao vivo
+                </button>
+                {onAddCommitment && (
+                  <button
+                    type="button"
+                    onClick={() => setCommitmentModalOpen(true)}
+                    className="rounded-md border border-slate-200 dark:border-[#243242] hover:border-[#0F5E59] px-3 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap"
+                  >
+                    + Compromisso
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMode('executive')}
+                  title="Sair do modo apresentação (Esc)"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#18222F] whitespace-nowrap"
+                >
+                  <LogOut size={13} />
+                  <span>Sair</span>
+                </button>
+              </div>
             </div>
 
-            <div className="py-2">{currentSlide.content}</div>
+            {freeMode ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 py-2">
+                {slides.map((sl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSlideIndex(idx);
+                      setFreeMode(false);
+                    }}
+                    className={`rounded-lg border p-3.5 text-left transition-colors ${
+                      idx === slideIndex
+                        ? 'border-[#0F5E59] bg-[#0F5E59]/8 dark:border-[#2DD4BF] dark:bg-[#2DD4BF]/10'
+                        : 'border-slate-200 dark:border-[#243242] hover:border-[#0F5E59]/60'
+                    }`}
+                  >
+                    <div className="font-mono text-[11px] text-[#0F5E59] dark:text-[#2DD4BF]">
+                      Etapa {idx + 1} de {slides.length}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {sl.title}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                      {sl.subtitle}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="py-2">{currentSlide.content}</div>
+            )}
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-200 dark:border-[#243242] pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 dark:border-[#243242] pt-4">
             <div className="flex items-center gap-1.5">
               {slides.map((_, idx) => (
                 <button
                   key={idx}
                   type="button"
-                  onClick={() => setSlideIndex(idx)}
+                  onClick={() => {
+                    setSlideIndex(idx);
+                    setFreeMode(false);
+                  }}
                   aria-label={`Ir para etapa ${idx + 1}`}
                   className={`h-2 rounded-full transition-all ${
                     idx === slideIndex
@@ -438,14 +706,20 @@ export const MeetingTemplateWorkspace: React.FC<{
                   }`}
                 />
               ))}
+              <span className="ml-2 hidden sm:inline text-[11px] text-slate-400 font-mono">
+                Setas ← / → navegam · Esc sai
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={slideIndex === 0}
-                onClick={() => setSlideIndex((i) => Math.max(0, i - 1))}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-[#243242] px-3.5 py-2 text-xs font-medium disabled:opacity-40"
+                onClick={() => {
+                  setFreeMode(false);
+                  setSlideIndex((i) => Math.max(0, i - 1));
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-[#243242] px-3.5 py-2 text-xs font-medium disabled:opacity-40 whitespace-nowrap"
               >
                 <ArrowLeft size={14} />
                 <span>Anterior</span>
@@ -453,8 +727,11 @@ export const MeetingTemplateWorkspace: React.FC<{
               <button
                 type="button"
                 disabled={slideIndex === slides.length - 1}
-                onClick={() => setSlideIndex((i) => Math.min(slides.length - 1, i + 1))}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] text-white dark:bg-[#2DD4BF] dark:text-slate-950 px-3.5 py-2 text-xs font-medium disabled:opacity-40"
+                onClick={() => {
+                  setFreeMode(false);
+                  setSlideIndex((i) => Math.min(slides.length - 1, i + 1));
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] text-white dark:bg-[#2DD4BF] dark:text-slate-950 px-3.5 py-2 text-xs font-medium disabled:opacity-40 whitespace-nowrap"
               >
                 <span>Próximo</span>
                 <ArrowRight size={14} />
@@ -469,13 +746,13 @@ export const MeetingTemplateWorkspace: React.FC<{
         <div className="space-y-3">
           <div className="no-print flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/25 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200">
             <span>
-              <strong>Especificação Documental Institucional:</strong> Serviço real de geração PDF server-side pendente de integração. Utilize a visualização ou impressão estruturada para validação.
+              <strong>Especificação Documental Institucional:</strong> Serviço real de geração PDF server-side pendente (Dependente de backend). Utilize "Imprimir visualização" para arquivamento imediato em A4.
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 rounded border border-amber-400/60 bg-white dark:bg-[#111923] px-2.5 py-1 font-medium text-slate-800 dark:text-slate-200"
+                className="inline-flex items-center gap-1.5 rounded border border-amber-400/60 bg-white dark:bg-[#111923] px-2.5 py-1 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap"
               >
                 <Printer size={13} />
                 <span>Imprimir visualização</span>
@@ -483,7 +760,7 @@ export const MeetingTemplateWorkspace: React.FC<{
               <button
                 type="button"
                 onClick={onTriggerPendingPdf}
-                className="inline-flex items-center gap-1.5 rounded bg-[#0F5E59] px-2.5 py-1 font-medium text-white"
+                className="inline-flex items-center gap-1.5 rounded bg-[#0F5E59] px-2.5 py-1 font-medium text-white whitespace-nowrap"
               >
                 <FileText size={13} />
                 <span>Solicitar PDF oficial (Backend)</span>
@@ -491,9 +768,9 @@ export const MeetingTemplateWorkspace: React.FC<{
             </div>
           </div>
 
-          <article className="print-only-surface mx-auto max-w-4xl rounded-lg border border-slate-300 dark:border-[#243242] bg-white text-slate-900 p-8 shadow-xs space-y-6">
+          <article className="print-only-surface mx-auto max-w-4xl rounded-lg border border-slate-300 dark:border-[#243242] bg-white text-slate-900 p-6 sm:p-8 shadow-xs space-y-6">
             {/* Institutional Header */}
-            <header className="flex items-start justify-between border-b-2 border-[#0F5E59] pb-4">
+            <header className="print-avoid-break flex flex-wrap items-start justify-between gap-4 border-b-2 border-[#0F5E59] pb-4">
               <div>
                 <div className="text-xs font-semibold tracking-wider text-[#0F5E59] uppercase">
                   Instituto HEAL — Hospital Espírita André Luiz
@@ -505,14 +782,14 @@ export const MeetingTemplateWorkspace: React.FC<{
                   Registro Operacional de Gestão de TI · Template {meeting.templateCode} ({meeting.type})
                 </div>
               </div>
-              <div className="text-right font-mono text-xs text-slate-600 space-y-0.5">
+              <div className="text-left sm:text-right font-mono text-xs text-slate-600 space-y-0.5">
                 <div>Data: {meeting.date} · {meeting.time}</div>
                 <div>Versão: {meeting.version}</div>
                 <div>Situação: {meeting.status}</div>
               </div>
             </header>
 
-            <section className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-3.5 rounded border border-slate-200">
+            <section className="print-avoid-break grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-slate-50 p-3.5 rounded border border-slate-200">
               <div>
                 <strong>Facilitador:</strong> {meeting.facilitator}
               </div>
@@ -521,7 +798,7 @@ export const MeetingTemplateWorkspace: React.FC<{
               </div>
             </section>
 
-            <section className="space-y-1.5 text-sm">
+            <section className="print-avoid-break space-y-1.5 text-sm">
               <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-1">
                 1. Síntese e Contexto
               </h3>
@@ -532,27 +809,37 @@ export const MeetingTemplateWorkspace: React.FC<{
               <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-1">
                 2. Decisões Registradas
               </h3>
-              <table className="w-full border border-slate-200 text-left">
-                <thead className="bg-slate-100">
-                  <tr>
-                    <th className="p-2 border-b border-slate-200">Decisão</th>
-                    <th className="p-2 border-b border-slate-200">Responsável</th>
-                    <th className="p-2 border-b border-slate-200">Prazo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {meeting.decisions.map((d) => (
-                    <tr key={d.id} className="border-b border-slate-200">
-                      <td className="p-2">{d.decision}</td>
-                      <td className="p-2">{d.owner}</td>
-                      <td className="p-2 font-mono">{d.dueDate}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full border border-slate-200 text-left">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="p-2 border-b border-slate-200">Decisão</th>
+                      <th className="p-2 border-b border-slate-200">Responsável</th>
+                      <th className="p-2 border-b border-slate-200">Prazo</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {meeting.decisions.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="p-2.5 text-slate-500">
+                          Nenhuma decisão registrada até o momento.
+                        </td>
+                      </tr>
+                    ) : (
+                      meeting.decisions.map((d) => (
+                        <tr key={d.id} className="border-b border-slate-200">
+                          <td className="p-2">{d.decision}</td>
+                          <td className="p-2">{d.owner}</td>
+                          <td className="p-2 font-mono">{d.dueDate}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </section>
 
-            <section className="space-y-2 text-xs">
+            <section className="print-avoid-break space-y-2 text-xs">
               <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-1">
                 3. Compromissos e Próximos Passos
               </h3>
@@ -562,14 +849,19 @@ export const MeetingTemplateWorkspace: React.FC<{
                     <strong>[{c.party}] {c.owner}:</strong> {c.action} (Prazo: {c.dueDate})
                   </li>
                 ))}
+                {meeting.nextSteps.map((ns, idx) => (
+                  <li key={`ns-${idx}`}>
+                    <strong>Próximo passo:</strong> {ns}
+                  </li>
+                ))}
               </ul>
             </section>
 
-            <section className="pt-6 space-y-4 text-xs">
+            <section className="print-avoid-break pt-6 space-y-4 text-xs">
               <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-1">
                 4. Ciência e Assinaturas Manuais (Arquivamento Institucional)
               </h3>
-              <div className="grid grid-cols-2 gap-8 pt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-6">
                 <div>
                   <div className="border-t border-slate-400 pt-1.5 text-center text-slate-600">
                     Coordenação / Gestão Operacional de TI
@@ -581,6 +873,12 @@ export const MeetingTemplateWorkspace: React.FC<{
                   </div>
                 </div>
               </div>
+              <div className="border-t border-slate-200 pt-2 flex flex-wrap justify-between text-[10px] font-mono text-slate-500">
+                <span>HEAL Ops 2.0 · Instituto HEAL</span>
+                <span>
+                  {meeting.templateCode} · {meeting.version} · {dataMode === 'demo' ? 'Base Demonstrativa' : 'Sessão Local'}
+                </span>
+              </div>
             </section>
           </article>
         </div>
@@ -591,7 +889,7 @@ export const MeetingTemplateWorkspace: React.FC<{
         open={decisionModalOpen}
         onClose={() => setDecisionModalOpen(false)}
         title="Registrar Decisão da Reunião"
-        subtitle={`${meeting.templateCode} · ${meeting.title}`}
+        subtitle={`${meeting.templateCode} · ${meeting.title} · Funcional apenas na sessão`}
       >
         <form
           onSubmit={(e) => {
@@ -658,26 +956,109 @@ export const MeetingTemplateWorkspace: React.FC<{
         </form>
       </Modal>
 
+      {/* Modal: Record Live Commitment */}
+      <Modal
+        open={commitmentModalOpen}
+        onClose={() => setCommitmentModalOpen(false)}
+        title="Registrar Compromisso Recíproco"
+        subtitle={`${meeting.templateCode} · ${meeting.title} · Funcional apenas na sessão`}
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!newCommitmentAction.trim() || !onAddCommitment) return;
+            onAddCommitment(
+              meeting.id,
+              newCommitmentParty,
+              newCommitmentOwner.trim() || 'Gestor de TI',
+              newCommitmentAction.trim(),
+              newCommitmentDue.trim() || 'Esta semana'
+            );
+            setNewCommitmentAction('');
+            setCommitmentModalOpen(false);
+          }}
+          className="space-y-3 text-xs"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Parte responsável
+              </label>
+              <select
+                value={newCommitmentParty}
+                onChange={(e) => setNewCommitmentParty(e.target.value as 'Colaborador' | 'Gestor' | 'Equipe')}
+                className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-2.5 py-1.5"
+              >
+                <option value="Colaborador">Colaborador</option>
+                <option value="Gestor">Gestor</option>
+                <option value="Equipe">Equipe</option>
+              </select>
+            </div>
+            <div>
+              <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Nome / Responsável
+              </label>
+              <input
+                type="text"
+                value={newCommitmentOwner}
+                onChange={(e) => setNewCommitmentOwner(e.target.value)}
+                className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-2.5 py-1.5"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Compromisso pactuado
+            </label>
+            <textarea
+              rows={3}
+              required
+              value={newCommitmentAction}
+              onChange={(e) => setNewCommitmentAction(e.target.value)}
+              placeholder="Ex.: Entregar documentação de failover antes da janela de sexta-feira..."
+              className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-2.5"
+            />
+          </div>
+          <div>
+            <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Prazo
+            </label>
+            <input
+              type="text"
+              value={newCommitmentDue}
+              onChange={(e) => setNewCommitmentDue(e.target.value)}
+              className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-2.5 py-1.5"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setCommitmentModalOpen(false)}
+              className="rounded-md border border-slate-200 dark:border-[#243242] px-3 py-1.5"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="rounded-md bg-[#0F5E59] text-white dark:bg-[#2DD4BF] dark:text-slate-950 px-3.5 py-1.5 font-medium"
+            >
+              Registrar compromisso
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Modal: Detail inspection from Presentation slide */}
       <Modal
         open={Boolean(detailModalContent)}
         onClose={() => setDetailModalContent(null)}
         title={detailModalContent?.title || 'Detalhe'}
       >
-        <div className="flex items-start justify-between gap-2">
-          <p className="whitespace-pre-line text-sm text-slate-700 dark:text-slate-300">
-            {detailModalContent?.body}
-          </p>
-          <button
-            type="button"
-            onClick={() => setDetailModalContent(null)}
-            className="text-slate-400 hover:text-slate-700"
-            aria-label="Fechar"
-          >
-            <X size={16} />
-          </button>
-        </div>
+        <p className="whitespace-pre-line text-sm text-slate-700 dark:text-slate-300">
+          {detailModalContent?.body}
+        </p>
       </Modal>
     </div>
   );
 };
+

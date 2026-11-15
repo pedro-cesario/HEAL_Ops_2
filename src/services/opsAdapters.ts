@@ -50,7 +50,7 @@ function nowTimeFormatted(): string {
 }
 
 export const PortalAdapter = {
-  async fetchOverview(mode: RuntimeDataMode, _config: EndpointConfig): Promise<
+  async fetchOverview(mode: RuntimeDataMode, config: EndpointConfig): Promise<
     AdapterResult<{
       kpis: OperationalKpi[];
       tickets: TicketItem[];
@@ -73,10 +73,33 @@ export const PortalAdapter = {
         errorMessage: 'Serviço temporariamente indisponível ao consultar indicadores operacionais.',
       };
     }
+
+    const threshold = Math.max(1, config.staleTicketThresholdHours || 24);
+    const basisLabel = config.staleTicketTimeBasis === 'uteis' ? 'úteis' : 'corridas';
+
+    const dynamicTickets: TicketItem[] = DEMO_TICKETS.map((t) => {
+      const baseReasons = t.inclusionReasons.filter((r) => r !== 'sem_atualizacao');
+      const isStale = t.hoursWithoutUpdate > threshold;
+      return {
+        ...t,
+        inclusionReasons: isStale ? [...baseReasons, 'sem_atualizacao'] : baseReasons,
+      };
+    });
+
+    const staleCount = dynamicTickets.filter((t) => t.inclusionReasons.includes('sem_atualizacao')).length;
+    const dynamicKpis: OperationalKpi[] = DEMO_KPIS.map((k) => {
+      if (k.key !== 'sem_atualizacao') return k;
+      return {
+        ...k,
+        value: staleCount,
+        subtitle: `Regra ref.: > ${threshold}h ${basisLabel} (parametrizável)`,
+      };
+    });
+
     return {
       data: {
-        kpis: DEMO_KPIS,
-        tickets: DEMO_TICKETS,
+        kpis: dynamicKpis,
+        tickets: dynamicTickets,
         priorities: DEMO_WEEKLY_PRIORITIES,
       },
       sourceMode: mode,

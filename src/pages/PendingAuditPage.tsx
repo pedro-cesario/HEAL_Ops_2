@@ -911,22 +911,27 @@ export const PendingAuditPage: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-[#243242] pt-3">
-              <button
-                type="button"
-                onClick={() => saveAuditEvaluation('Rascunho')}
-                className="rounded-md border border-slate-200 dark:border-[#243242] px-3 py-1.5 font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#18222F]"
-              >
-                Salvar rascunho
-              </button>
-              <button
-                type="button"
-                onClick={() => saveAuditEvaluation('Concluída')}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3.5 py-1.5 font-medium text-white dark:text-slate-950"
-              >
-                <CheckCircle2 size={14} />
-                <span>Concluir auditoria</span>
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-[#243242] pt-3">
+              <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                Persistência apenas na sessão local (integração backend pendente).
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => saveAuditEvaluation('Rascunho')}
+                  className="rounded-md border border-slate-200 dark:border-[#243242] px-3 py-1.5 font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#18222F]"
+                >
+                  Salvar rascunho
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveAuditEvaluation('Concluída')}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3.5 py-1.5 font-medium text-white dark:text-slate-950"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Concluir auditoria</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

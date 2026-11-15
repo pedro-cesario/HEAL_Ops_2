@@ -495,15 +495,15 @@ export const TeamPage: React.FC = () => {
             {activeTab === 'compromissos' && (
               <div className="space-y-2.5">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Compromissos recíprocos pactuados entre colaborador e gestão (TPL-03).
+                  Compromissos recíprocos pactuados entre Colaborador e Gestão (TPL-03 · Base demonstrativa).
                 </p>
                 {selectedMember.commitments.map((c) => (
                   <div key={c.id} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-[#0F5E59] dark:text-[#2DD4BF]">
-                        Responsável: {c.owner}
+                        Parte: {c.owner === 'Gestor' ? 'Gestão' : `Colaborador (${c.owner})`}
                       </span>
-                      <span className="font-mono text-slate-500">
+                      <span className="font-mono text-slate-500 shrink-0">
                         {c.status} · Prazo {c.dueDate}
                       </span>
                     </div>

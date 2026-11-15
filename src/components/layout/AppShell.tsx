@@ -113,7 +113,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#0B1117] text-slate-900 dark:text-slate-100">
+    <div className="flex h-screen print:h-auto w-full overflow-hidden print:overflow-visible bg-[#F8FAFC] dark:bg-[#0B1117] text-slate-900 dark:text-slate-100">
       {/* Desktop Collapsible Sidebar */}
       <aside
         className={`no-print hidden lg:flex flex-col border-r border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] transition-[width] duration-150 ${
@@ -241,12 +241,39 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 );
               })}
             </nav>
+            <div className="border-t border-slate-200 dark:border-[#243242] p-3 space-y-2 text-xs">
+              <label className="block font-medium text-slate-600 dark:text-slate-400">
+                Modo dos dados
+              </label>
+              <select
+                aria-label="Modo de operação dos dados (móvel)"
+                value={dataMode}
+                onChange={(e) => setDataMode(e.target.value as RuntimeDataMode)}
+                className="w-full rounded-md border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-2.5 py-1.5 text-xs"
+              >
+                <option value="demo">Demonstração (Design)</option>
+                <option value="disconnected">Desconectado</option>
+                <option value="unavailable">Serviço Indisponível</option>
+                <option value="stale">Dados Desatualizados</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerRefresh();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 dark:border-[#243242] px-3 py-1.5 text-xs font-medium"
+              >
+                <RefreshCw size={13} />
+                <span>Atualizar leitura</span>
+              </button>
+            </div>
           </aside>
         </div>
       )}
 
       {/* Main Column */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
         {/* Compact Top Header (52px) */}
         <header className="no-print flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -483,7 +510,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         </div>
 
         {/* Main Viewport */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-4">{children}</main>
+        <main className="flex-1 overflow-y-auto print:overflow-visible p-3 sm:p-4 print:p-0">{children}</main>
       </div>
 
       {/* Non-blocking Toasts */}
