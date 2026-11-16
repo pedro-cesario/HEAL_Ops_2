@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -11,12 +11,10 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
-  LoadingSkeletonGrid,
   SemanticLabel,
   UnavailableState,
 } from '../components/common/UiPrimitives';
 import { useOps } from '../context/OpsContext';
-import { AgentAdapter } from '../services/opsAdapters';
 import type { AgentMessage, AgentMessageCategory } from '../types/ops';
 
 const QUICK_PROMPTS = [
@@ -39,33 +37,133 @@ const CATEGORY_LABELS: Record<AgentMessageCategory, { label: string; tone: 'nomi
 };
 
 export const AgentPage: React.FC = () => {
-  const { dataMode, refreshTrigger, triggerRefresh, endpointConfig, setActiveModule, pushToast } = useOps();
+  const {
+    dataMode,
+    triggerRefresh,
+    endpointConfig,
+    setActiveModule,
+    pushToast,
+    agentMessages,
+    setAgentMessages,
+    agentActivityLogs,
+    appendAgentActivity,
+    computedTickets,
+    computedKpis,
+    weeklyPriorities,
+    pendings,
+    auditSamples,
+  } = useOps();
 
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | undefined>();
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [inputText, setInputText] = useState('');
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setErrorMessage(undefined);
+  const buildContextualAgentReply = (query: string): AgentMessage => {
+    const q = query.toLowerCase();
+    const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-    AgentAdapter.fetchConversation(dataMode).then((res) => {
-      if (!active) return;
-      if (res.errorMessage) {
-        setErrorMessage(res.errorMessage);
-        setMessages([]);
-      } else {
-        setMessages(res.data);
-      }
-      setLoading(false);
-    });
+    const thresholdHours = Math.max(1, endpointConfig.staleTicketThresholdHours || 24);
+    const basisLabel = endpointConfig.staleTicketTimeBasis === 'uteis' ? 'úteis' : 'corridas';
 
-    return () => {
-      active = false;
+    const popNonCompliant = computedTickets.filter((t) => t.isPopNonCompliant);
+    const staleTickets = computedTickets.filter((t) => t.hoursWithoutUpdate > thresholdHours);
+    const noTechTickets = computedTickets.filter((t) => !t.techName);
+    const openPendings = pendings.filter((p) => p.status !== 'Resolvida');
+    const nonConformingAudits = auditSamples.filter((a) => a.verdict === 'Não Conforme');
+    const pendingAudits = auditSamples.filter((a) => a.auditStatus !== 'Concluída');
+
+    if (q.includes('pop') || q.includes('sem técnico') || q.includes('crític')) {
+      return {
+        id: `a-${Date.now() + 1}`,
+        sender: 'agent',
+        timestamp: now,
+        category: 'analise',
+        content: `Diagnóstico POP na sessão atual: ${popNonCompliant.length} chamado(s) em desconformidade POP entre ${noTechTickets.length} sem técnico nominal (${computedTickets.length} na amostra ativa). Os demais sem técnico seguem exceções verticais autorizadas.`,
+        evidence: popNonCompliant.slice(0, 4).map(
+          (t) => `#${t.id} (${t.macroArea} · SLA ${t.slaRisk}) — ${t.title} [${t.classificationReason}]`
+        ),
+        sources: [
+          'Amostra GLPI da sessão (Base Demonstrativa)',
+          `Regra POP HEAL + parâmetro > ${thresholdHours}h ${basisLabel}`,
+        ],
+      };
+    }
+
+    if (q.includes('gargal') || q.includes('atualiza') || q.includes('24h') || q.includes('fila')) {
+      return {
+        id: `a-${Date.now() + 1}`,
+        sender: 'agent',
+        timestamp: now,
+        category: 'analise',
+        content: `Mapeamento de gargalos (> ${thresholdHours}h ${basisLabel}): foram identificados ${staleTickets.length} chamado(s) sem interação válida dentro da regra vigente configurada em Configurações.`,
+        evidence:
+          staleTickets.length > 0
+            ? staleTickets.map(
+                (t) =>
+                  `#${t.id} · ${t.hoursWithoutUpdate}h sem atualização · ${t.techName || 'Sem técnico'} (${t.macroArea})`
+              )
+            : [`Nenhum chamado ativo acima de ${thresholdHours}h ${basisLabel} na sessão atual.`],
+        sources: [
+          `Configuração vigente: > ${thresholdHours}h ${basisLabel}`,
+          'Visão Geral / TicketDrawer sincronizado',
+        ],
+      };
+    }
+
+    if (q.includes('daily') || q.includes('tpl-01') || q.includes('prioridade')) {
+      return {
+        id: `a-${Date.now() + 1}`,
+        sender: 'agent',
+        timestamp: now,
+        category: 'sugestao',
+        content: `Roteiro sugerido para a Daily Operacional (TPL-01): herdar as ${weeklyPriorities.length} prioridades oficiais do Alinhamento Semanal (TPL-02), priorizando os ${popNonCompliant.length} item(ns) POP e os ${staleTickets.length} chamado(s) acima de ${thresholdHours}h ${basisLabel}.`,
+        evidence: weeklyPriorities.slice(0, 5).map(
+          (p) => `#${p.ticketId} (${p.status}) — ${p.title} · Resp.: ${p.owner} · Próx.: ${p.nextAction}`
+        ),
+        sources: ['Prioridades sincronizadas do TPL-02', 'Carteira de chamados da sessão'],
+      };
+    }
+
+    if (q.includes('pendên') || q.includes('recorrent')) {
+      return {
+        id: `a-${Date.now() + 1}`,
+        sender: 'agent',
+        timestamp: now,
+        category: 'sugestao',
+        content: `Consolidado de pendências na sessão: existem ${openPendings.length} pendência(s) aberta(s)/em tratamento (${pendings.length} no total) e ${nonConformingAudits.length} auditoria(s) marcadas como Não Conforme que exigem tratativa gerencial.`,
+        evidence: openPendings.slice(0, 4).map(
+          (p) => `${p.id} [${p.criticality}] · ${p.description} · Resp.: ${p.owner} (Prazo ${p.dueDate})`
+        ),
+        sources: ['Módulo Pendências e Auditoria (sessão local)'],
+      };
+    }
+
+    if (q.includes('auditor') || q.includes('amostra')) {
+      return {
+        id: `a-${Date.now() + 1}`,
+        sender: 'agent',
+        timestamp: now,
+        category: 'analise',
+        content: `Situação da amostra de auditoria na sessão: ${auditSamples.length} item(ns) selecionados na amostra, sendo ${nonConformingAudits.length} avaliado(s) como Não Conforme e ${pendingAudits.length} ainda pendente(s)/em revisão.`,
+        evidence: auditSamples.slice(0, 4).map(
+          (a) => `#${a.ticketId} (${a.techName} · ${a.macroArea}) — ${a.auditStatus} · Veredito: ${a.verdict}`
+        ),
+        sources: ['Workflow de Auditoria (9 etapas · sessão local)'],
+      };
+    }
+
+    const abertosKpi = computedKpis.find((k) => k.key === 'abertos');
+    return {
+      id: `a-${Date.now() + 1}`,
+      sender: 'agent',
+      timestamp: now,
+      category: 'sugestao',
+      content: `Resumo executivo contextual (Base Demonstrativa · IA R7 ${endpointConfig.localAiUrl} aguardando homologação): ${abertosKpi?.value ?? computedTickets.length} chamados abertos na amostra ativa, ${popNonCompliant.length} em desconformidade POP, ${staleTickets.length} acima de ${thresholdHours}h ${basisLabel} e ${openPendings.length} pendências em aberto. Nenhuma alteração automática foi enviada ao GLPI ou documentos.`,
+      evidence: [
+        `Prioridades oficiais ativas: ${weeklyPriorities.length} item(ns) sincronizados do TPL-02.`,
+        `Modo de execução: ${dataMode} (sem escrita externa no GLPI/M365).`,
+      ],
+      sources: [`Contrato IA Local (${endpointConfig.localAiUrl}) — Leitura contextual local`],
     };
-  }, [dataMode, refreshTrigger]);
+  };
 
   const handleSend = (promptText?: string) => {
     const text = (promptText ?? inputText).trim();
@@ -79,23 +177,19 @@ export const AgentPage: React.FC = () => {
       content: text,
     };
 
-    const agentReply: AgentMessage = {
-      id: `a-${Date.now() + 1}`,
-      sender: 'agent',
-      timestamp: now,
-      category: 'sugestao',
-      content:
-        'Solicitação registrada no fluxo demonstrativo. Como o serviço de IA local (R7 :3310) ainda aguarda autenticação e proxy homologado, nenhuma consulta em tempo real ao GLPI ou gravação externa foi executada. Utilize este formato para validar a leitura de evidências e aprovações.',
-      sources: [`Contrato IA Local (${endpointConfig.localAiUrl}) — Pendente de autorização`],
-      evidence: ['Modo demonstração ativo: resposta restrita à validação de interface e governança.'],
-    };
+    const agentReply = buildContextualAgentReply(text);
 
-    setMessages((prev) => [...prev, userMsg, agentReply]);
+    setAgentMessages((prev) => [...prev, userMsg, agentReply]);
+    appendAgentActivity(
+      `Consulta contextual respondida (Base Demonstrativa): "${text.slice(0, 62)}${text.length > 62 ? '...' : ''}".`,
+      'info'
+    );
     if (!promptText) setInputText('');
   };
 
   const handleActionDecision = (msgId: string, approve: boolean) => {
-    setMessages((prev) =>
+    const targetMsg = agentMessages.find((m) => m.id === msgId);
+    setAgentMessages((prev) =>
       prev.map((m) => {
         if (m.id !== msgId || !m.proposedAction) return m;
         return {
@@ -110,12 +204,20 @@ export const AgentPage: React.FC = () => {
     );
 
     if (approve) {
+      appendAgentActivity(
+        `Aprovação visual registrada (${targetMsg?.proposedAction?.targetSystem || 'GLPI'}); envio bloqueado no modo demonstração.`,
+        'warning'
+      );
       pushToast({
         title: 'Execução bloqueada no modo demonstração',
         description: 'A confirmação foi registrada visualmente, mas alterações no GLPI ou documentos só ocorrem após homologação do backend autenticado.',
         tone: 'warning',
       });
     } else {
+      appendAgentActivity(
+        `Solicitação recusada pelo gestor (${targetMsg?.proposedAction?.targetSystem || 'GLPI'}).`,
+        'info'
+      );
       pushToast({
         title: 'Solicitação rejeitada pelo gestor',
         description: 'Nenhuma alteração foi aplicada nos sistemas externos.',
@@ -124,19 +226,18 @@ export const AgentPage: React.FC = () => {
     }
   };
 
-  if (loading) return <LoadingSkeletonGrid rows={4} />;
-
-  if (errorMessage) {
+  if (dataMode === 'disconnected' || dataMode === 'unavailable') {
     return (
       <UnavailableState
         title="Agente Gerencial indisponível"
-        description={errorMessage}
+        description={`O motor de IA local (${endpointConfig.localAiUrl}) encontra-se ${dataMode === 'disconnected' ? 'desconectado' : 'indisponível'} no modo de simulação selecionado.`}
         onRetry={triggerRefresh}
         onConfigure={() => setActiveModule('configuracoes')}
       />
     );
   }
 
+  const messages = agentMessages;
   const pendingApprovals = messages.filter(
     (m) => m.proposedAction?.approvalStatus === 'pending_approval'
   );
@@ -368,14 +469,18 @@ export const AgentPage: React.FC = () => {
             </h3>
           </div>
           <ul className="space-y-2 text-slate-600 dark:text-slate-400">
-            <li className="flex items-start gap-2">
-              <History size={13} className="mt-0.5 shrink-0 text-slate-400" />
-              <span>12:54 · Proposta de cobrança #48198 gerada (aguardando aprovação).</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
-              <span>12:53 · Diagnóstico de gargalos e POP consolidado para revisão.</span>
-            </li>
+            {agentActivityLogs.map((log) => (
+              <li key={log.id} className="flex items-start gap-2">
+                {log.tone === 'warning' ? (
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
+                ) : (
+                  <History size={13} className="mt-0.5 shrink-0 text-slate-400" />
+                )}
+                <span>
+                  <strong className="font-mono text-slate-700 dark:text-slate-300">{log.timestamp}</strong> · {log.detail}
+                </span>
+              </li>
+            ))}
           </ul>
         </div>
       </aside>

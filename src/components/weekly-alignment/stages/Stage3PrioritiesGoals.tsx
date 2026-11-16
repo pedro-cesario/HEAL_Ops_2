@@ -38,7 +38,7 @@ export const Stage3PrioritiesGoals: React.FC<{
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
       {/* Coluna Esquerda: Chamados disponíveis com busca e 4 filtros */}
-      <div className="lg:col-span-7">
+      <div className="lg:col-span-7 min-w-0">
         <TicketTable
           tickets={tickets}
           priorities={priorities}
@@ -47,25 +47,25 @@ export const Stage3PrioritiesGoals: React.FC<{
       </div>
 
       {/* Coluna Direita: Prioridades da Semana (X/5) + Meta da Semana */}
-      <div className="lg:col-span-5 space-y-3">
+      <div className="lg:col-span-5 min-w-0 space-y-2.5">
         {/* Bloco 1: Prioridades da Semana (até 5) */}
-        <section className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3.5 space-y-2.5">
+        <section className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3 space-y-2">
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-[#1D2836] pb-2">
             <div className="flex items-center gap-2 min-w-0">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 dark:border-[#243242] bg-[#0F5E59]/10 dark:bg-[#2DD4BF]/10 text-[#0F5E59] dark:text-[#2DD4BF]">
                 <ListChecks size={14} />
               </div>
               <div className="min-w-0">
-                <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
                   Prioridades da Semana
                 </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                   Selecione até 5 chamados críticos com dono e prazo
                 </p>
               </div>
             </div>
             <span
-              className={`font-mono text-sm font-bold tabular-nums whitespace-nowrap ${
+              className={`font-mono text-sm font-bold tabular-nums whitespace-nowrap shrink-0 ${
                 priorities.length >= 5
                   ? 'text-emerald-700 dark:text-emerald-400'
                   : 'text-[#0F5E59] dark:text-[#2DD4BF]'
@@ -75,7 +75,7 @@ export const Stage3PrioritiesGoals: React.FC<{
             </span>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {priorities.map((item, idx) => (
               <PriorityCard
                 key={item.id}
@@ -96,7 +96,7 @@ export const Stage3PrioritiesGoals: React.FC<{
                   return (
                     <div
                       key={slotNumber}
-                      className="flex items-center justify-between rounded-md border border-dashed border-slate-200 dark:border-[#243242] bg-slate-50/50 dark:bg-[#18222F]/40 px-2.5 py-2 text-[11px] text-slate-400 dark:text-slate-500"
+                      className="flex items-center justify-between rounded-md border border-dashed border-slate-200 dark:border-[#243242] bg-slate-50/50 dark:bg-[#18222F]/40 px-2.5 py-1.5 text-[11px] text-slate-400 dark:text-slate-500"
                     >
                       <span className="font-mono font-semibold">Vaga P{slotNumber}</span>
                       <span>Disponível à esquerda</span>

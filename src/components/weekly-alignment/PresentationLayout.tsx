@@ -14,8 +14,8 @@ export const PresentationLayout: React.FC<{
     >
       {header}
 
-      <main className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-3.5">
-        <div className="mx-auto max-w-[1600px] h-full">{children}</div>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-3 sm:px-5 sm:py-3.5">
+        <div className="mx-auto max-w-[1600px] h-full min-w-0">{children}</div>
       </main>
 
       {navigation}

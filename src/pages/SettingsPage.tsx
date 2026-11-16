@@ -10,13 +10,14 @@ import {
   Gauge,
   Mail,
   Palette,
+  RotateCcw,
   Save,
   Shield,
   Sliders,
   Users,
 } from 'lucide-react';
+import { DEFAULT_ENDPOINT_CONFIG, INTEGRATION_STATUS_META, PERSISTENCE_LABELS } from '../design/tokens';
 import { useOps } from '../context/OpsContext';
-import { INTEGRATION_STATUS_META, PERSISTENCE_LABELS } from '../design/tokens';
 import type { RuntimeDataMode, StaleTimeBasis } from '../types/ops';
 
 type SettingsSectionId =
@@ -58,39 +59,39 @@ const SETTINGS_SECTIONS: {
 
 const PERSISTENCE_MATRIX: { capability: string; classification: string; note: string }[] = [
   {
-    capability: 'Tema claro/escuro, filtro de chamados e leitura dos 7 módulos',
+    capability: 'Tema claro/escuro, filtros e rascunhos locais (heal_ops_session_v1)',
     classification: PERSISTENCE_LABELS.sessao_local,
-    note: 'Preferência visual salva no navegador; dados seguem o modo de execução ativo.',
+    note: 'Rascunhos e edições da sessão ficam salvos no localStorage com botão explícito para restaurar a base demonstrativa.',
   },
   {
     capability: 'Parâmetros editáveis (endpoints, URL GLPI, regra de horas sem atualização)',
     classification: PERSISTENCE_LABELS.sessao_local,
-    note: 'Aplicados imediatamente nos drawers, KPIs e templates durante a sessão.',
+    note: 'Aplicados imediatamente nos KPIs, TicketDrawer, Relatórios e apresentações TPL-01/TPL-02.',
   },
   {
-    capability: 'Reuniões (rascunhos, decisões ao vivo e compromissos recíprocos)',
+    capability: 'Reuniões (Daily TPL-01, Alinhamento TPL-02, TPL-03, TPL-04, decisões e acordos)',
     classification: PERSISTENCE_LABELS.sessao_local,
-    note: 'Gravação definitiva depende da integração com endpoint do FastAPI (:3312).',
+    note: 'Prioridades e acordos propagam entre módulos na sessão; gravação definitiva depende do FastAPI (:3312).',
   },
   {
-    capability: 'Auditoria manual de amostra e checklist POP por chamado',
+    capability: 'Auditoria manual de amostra, pendências e checklist POP',
     classification: PERSISTENCE_LABELS.sessao_local,
-    note: 'Avaliações ficam na sessão local até homologação do backend de auditoria.',
+    note: 'Vereditos Não Conforme geram pendência automaticamente na sessão até homologação do backend.',
   },
   {
-    capability: 'Indicadores, carteira de equipe, relatórios e preview de amostragem',
+    capability: 'Indicadores, carteira de equipe, relatórios (7d/30d/90d) e preview de amostragem',
     classification: PERSISTENCE_LABELS.demonstrativa,
     note: 'Dataset isolado e conciliado para validação visual sem alterar produção.',
   },
   {
-    capability: 'Amostragem estratificada oficial, exportação CSV/PDF e ações do Agente IA',
+    capability: 'Amostragem estratificada oficial, CSV/PDF oficial e ações do Agente IA',
     classification: PERSISTENCE_LABELS.dependente_backend,
     note: 'Bloqueadas para gravação real sem conexão autenticada com :3312 / R7 :3310.',
   },
   {
     capability: 'Microsoft 365 (Calendário Outlook e Caixa de Entrada)',
     classification: PERSISTENCE_LABELS.nao_implementada,
-    note: 'Sem OAuth/Graph conectado; apenas blocos preparados de contrato.',
+    note: 'Sem OAuth/Graph conectado; blocos visuais preparados para contrato futuro.',
   },
 ];
 
@@ -105,7 +106,16 @@ export const SettingsPage: React.FC = () => {
     integrations,
     updateIntegrationEndpoint,
     pushToast,
+    resetDemoSession,
+    macroAreasConfig,
+    updateMacroAreaConfig,
+    addMacroAreaConfig,
+    toggleMacroAreaActive,
+    teamMembers,
   } = useOps();
+
+  const [newMacroName, setNewMacroName] = useState('');
+  const [newMacroLead, setNewMacroLead] = useState(teamMembers[0]?.name || 'Gestor de TI');
 
   const [section, setSection] = useState<SettingsSectionId>('integracoes');
   const [glpiInput, setGlpiInput] = useState(endpointConfig.glpiTicketUrlTemplate);
@@ -116,6 +126,20 @@ export const SettingsPage: React.FC = () => {
   const [refreshSec, setRefreshSec] = useState(endpointConfig.autoRefreshSeconds);
   const [staleHoursInput, setStaleHoursInput] = useState(endpointConfig.staleTicketThresholdHours);
   const [staleBasisInput, setStaleBasisInput] = useState<StaleTimeBasis>(endpointConfig.staleTicketTimeBasis);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+
+  const handleConfirmResetDemo = () => {
+    resetDemoSession();
+    setGlpiInput(DEFAULT_ENDPOINT_CONFIG.glpiTicketUrlTemplate);
+    setPortalInput(DEFAULT_ENDPOINT_CONFIG.portalFastApiUrl);
+    setR7Input(DEFAULT_ENDPOINT_CONFIG.r7RuntimeUrl);
+    setStagingInput(DEFAULT_ENDPOINT_CONFIG.stagingUrl);
+    setAiInput(DEFAULT_ENDPOINT_CONFIG.localAiUrl);
+    setRefreshSec(DEFAULT_ENDPOINT_CONFIG.autoRefreshSeconds);
+    setStaleHoursInput(DEFAULT_ENDPOINT_CONFIG.staleTicketThresholdHours);
+    setStaleBasisInput(DEFAULT_ENDPOINT_CONFIG.staleTicketTimeBasis);
+    setConfirmResetOpen(false);
+  };
 
   const handleSaveConfig = () => {
     const safeHours = Math.min(168, Math.max(1, Number(staleHoursInput) || 24));
@@ -264,14 +288,47 @@ export const SettingsPage: React.FC = () => {
                 </span>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleSaveConfig}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] px-3.5 py-2 font-medium text-white dark:text-slate-950"
-            >
-              <Save size={14} />
-              <span>Salvar parâmetros gerais</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] px-3.5 py-2 font-medium text-white dark:text-slate-950 whitespace-nowrap"
+              >
+                <Save size={14} />
+                <span>Salvar parâmetros gerais</span>
+              </button>
+
+              {!confirmResetOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-[#243242] hover:border-red-400 px-3 py-2 font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap"
+                >
+                  <RotateCcw size={14} />
+                  <span>Restaurar base demonstrativa</span>
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-red-300 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/25 px-3 py-1.5">
+                  <span className="text-[11px] font-medium text-red-800 dark:text-red-300">
+                    Limpar rascunhos locais e restaurar dados iniciais?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleConfirmResetDemo}
+                    className="rounded bg-red-700 hover:bg-red-800 px-2.5 py-1 text-[11px] font-medium text-white whitespace-nowrap"
+                  >
+                    Confirmar restauração
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmResetOpen(false)}
+                    className="rounded border border-slate-300 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1 text-[11px]"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="pt-2 space-y-2">
               <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -420,8 +477,31 @@ export const SettingsPage: React.FC = () => {
                 Estado atual: Não configurado ({PERSISTENCE_LABELS.nao_implementada})
               </div>
               <p className="text-slate-600 dark:text-slate-400">
-                A auditoria técnica confirmou que a integração com Microsoft Graph (Calendário e Outlook) ainda não está implementada. O frontend mantém os blocos Minha Agenda e E-mails e Pendências preparados para receber os contratos OAuth/backend futuros.
+                A auditoria técnica confirmou que a integração com Microsoft Graph (Calendário e Outlook) ainda não está implementada. O frontend mantém os blocos Minha Agenda e E-mails e Pendências preparados com ações locais de sessão até receber os contratos OAuth/backend futuros.
               </p>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-[#243242]">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 dark:bg-[#18222F] text-[11px] uppercase text-slate-500">
+                  <tr>
+                    <th className="p-2.5">Contrato Graph Esperado</th>
+                    <th className="p-2.5">Escopo OAuth</th>
+                    <th className="p-2.5">Uso no Portal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-[#243242]">
+                  <tr>
+                    <td className="p-2.5 font-mono">/me/calendarview</td>
+                    <td className="p-2.5 font-mono text-slate-500">Calendars.Read</td>
+                    <td className="p-2.5 text-slate-600 dark:text-slate-400">Sincronização de ritos TPL-01..04 em Minha Agenda</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2.5 font-mono">/me/messages</td>
+                    <td className="p-2.5 font-mono text-slate-500">Mail.Read</td>
+                    <td className="p-2.5 text-slate-600 dark:text-slate-400">Leitura de alertas de fornecedores/diretoria (sem envio real)</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -500,28 +580,146 @@ export const SettingsPage: React.FC = () => {
             </h2>
             <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-4 space-y-2 leading-relaxed text-slate-700 dark:text-slate-300">
               {section === 'usuarios' && (
-                <p>Perfis de acesso (Gestor Operacional, Referência Técnica, Auditor, Visualização) serão vinculados à autenticação corporativa na etapa de homologação com o FastAPI (:3312).</p>
+                <>
+                  <p>Perfis de acesso corporativos previstos para vinculação com o FastAPI (:3312) e Microsoft Entra ID na fase backend:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {[
+                      ['Gestor Operacional', 'Edita prioridades TPL-02, pendências, parâmetros POP e autoriza ações do Agente IA.'],
+                      ['Referência Técnica', 'Conduz Daily TPL-01, atualiza triagem da macroárea e compromissos de equipe.'],
+                      ['Auditor POP', 'Executa o roteiro de auditoria em 9 etapas e gera não conformidades rastreáveis.'],
+                      ['Visualização Executiva', 'Consulta indicadores deduplicados, relatórios 7d/30d/90d e atas oficiais.'],
+                    ].map(([role, desc]) => (
+                      <div key={role} className="rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-2.5">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">{role}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">{desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
               {section === 'pop' && (
-                <p>As regras de conformidade POP (incluindo exceções de fluxos verticais para chamados sem técnico nominal) são avaliadas pelo backend; o limiar de chamados sem atualização é parametrizável abaixo para conciliação oficial.</p>
+                <>
+                  <p>As regras de conformidade POP avaliam atribuição nominal e frequência de atualização no GLPI. Exceções verticais autorizadas (ex.: fila de Infraestrutura programada) permanecem sinalizadas explicitamente.</p>
+                  <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                    <li>Chamado assistencial/PEP sem técnico nominal fora de exceção entra automaticamente como alerta POP.</li>
+                    <li>Parâmetro abaixo recalcula imediatamente a fila sem atualização nos KPIs, TicketDrawer, Relatórios e Daily.</li>
+                  </ul>
+                </>
               )}
               {section === 'indicadores' && (
-                <p>Todos os 16 indicadores do módulo Relatórios possuem origem e regra explícita contra dupla contagem entre chamados solucionados e fechados. O parâmetro de chamados sem atualização abaixo ajusta a visão operacional na sessão.</p>
+                <p>Todos os 16 indicadores do módulo Relatórios possuem origem e regra explícita contra dupla contagem entre chamados solucionados e fechados, com suporte a recorte dinâmico (7d / 30d / 90d) e parâmetro editável de atualização abaixo.</p>
               )}
               {section === 'auditoria' && (
-                <p>A seleção aleatória oficial por amostragem estratificada (Técnico, Macroárea, Categoria, Status, Grupo, Período) aguarda implementação do serviço dedicado no backend.</p>
+                <>
+                  <p>Fluxo completo de Auditoria em 9 etapas ativo na sessão local (Critérios, Tamanho, Geração, Inspeção, Checklist POP, Classificação, Comparação com IA, Resultados Consolidados e Ações Corretivas).</p>
+                  <p className="text-[11px] text-slate-500">Vereditos marcados como Não Conforme propagam automaticamente uma nova pendência gerencial para tratativa.</p>
+                </>
               )}
               {section === 'templates' && (
-                <p>Templates ativos: TPL-01 (Daily Operacional), TPL-02 (Alinhamento Semanal em 8 etapas), TPL-03 (Alinhamentos Individuais e Feedback recíprocos) e TPL-04 (Projetos e GMUD, com numeração sujeita à conciliação oficial).</p>
+                <div className="space-y-4">
+                  <p>Catálogo de ritos e templates institucionais homologados no frontend:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      ['TPL-01 · Daily Operacional', 'Apresentação interativa em 4 etapas (Evolução, Macroáreas, Fila Crítica, Desafio & Ata) com herança direta do TPL-02.'],
+                      ['TPL-02 · Alinhamento Semanal', 'Apresentação interativa em 7 etapas com definição de prioridades, macroáreas, GMUD e acordos.'],
+                      ['TPL-03 · Individual e Feedback', 'Workspace bilateral (Colaborador/Gestor), histórico e prévia A4 integrado a Equipe.'],
+                      ['TPL-04 · Projetos e GMUD', 'Fluxo completo de estados (GMUD-042), checklists por fase e trilha simulada (numeração sujeita à conciliação oficial).'],
+                    ].map(([code, desc]) => (
+                      <div key={code} className="rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-2.5">
+                        <div className="font-mono font-semibold text-[#0F5E59] dark:text-[#2DD4BF]">{code}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">{desc}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3.5 space-y-2.5">
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">
+                      Macroáreas Configuráveis da Daily (TPL-01)
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {macroAreasConfig.map((mc) => (
+                        <div
+                          key={mc.id}
+                          className="flex flex-wrap items-center gap-2 rounded border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-2"
+                        >
+                          <input
+                            type="text"
+                            value={mc.name}
+                            onChange={(e) => updateMacroAreaConfig(mc.id, { name: e.target.value })}
+                            className="flex-1 min-w-[130px] rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1 text-xs font-medium"
+                          />
+                          <select
+                            value={mc.defaultLeadName}
+                            onChange={(e) =>
+                              updateMacroAreaConfig(mc.id, { defaultLeadName: e.target.value })
+                            }
+                            className="rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1 text-xs"
+                          >
+                            {teamMembers.map((m) => (
+                              <option key={m.id} value={m.name}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => toggleMacroAreaActive(mc.id)}
+                            className={`rounded px-2 py-1 text-[11px] font-medium ${
+                              mc.active
+                                ? 'bg-[#0F5E59]/10 text-[#0F5E59] dark:text-[#2DD4BF]'
+                                : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                            }`}
+                          >
+                            {mc.active ? 'Ativa' : 'Oculta'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!newMacroName.trim()) return;
+                        addMacroAreaConfig(newMacroName, newMacroLead);
+                        setNewMacroName('');
+                      }}
+                      className="flex flex-wrap items-center gap-2 pt-1"
+                    >
+                      <input
+                        type="text"
+                        value={newMacroName}
+                        onChange={(e) => setNewMacroName(e.target.value)}
+                        placeholder="Nova macroárea para a Daily..."
+                        className="flex-1 min-w-[180px] rounded border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-2.5 py-1.5"
+                      />
+                      <select
+                        value={newMacroLead}
+                        onChange={(e) => setNewMacroLead(e.target.value)}
+                        className="rounded border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-2.5 py-1.5"
+                      >
+                        {teamMembers.map((m) => (
+                          <option key={m.id} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        className="rounded bg-[#0F5E59] text-white dark:bg-[#14B8A6] dark:text-slate-950 px-3 py-1.5 font-medium"
+                      >
+                        + Adicionar macroárea
+                      </button>
+                    </form>
+                  </div>
+                </div>
               )}
               {section === 'catalogo' && (
-                <p>O catálogo oficial de templates, critérios POP e macroáreas será sincronizado com o repositório documental da Matrix na homologação.</p>
+                <p>O catálogo oficial de serviços GLPI, macroáreas (Assistencial, Sistemas Clínicos, Infraestrutura, Governança & Corporativo) e exceções POP será sincronizado com o repositório da Matrix na etapa de backend.</p>
               )}
               {section === 'guia' && (
-                <p>Princípio HEAL Ops 2.0: Sintético primeiro, analítico sob demanda. Priorize os alertas em desconformidade POP na Visão Geral e utilize o Modo Apresentação para condução dos ritos sem excesso de rolagem em 1366×768.</p>
+                <p>Princípio HEAL Ops 2.0: Sintético primeiro, analítico sob demanda. Priorize os alertas em desconformidade POP na Visão Geral, conduza a Daily (TPL-01) e o Alinhamento Semanal (TPL-02) direto na apresentação interativa sem excesso de rolagem em 1366×768.</p>
               )}
               {section === 'documentos' && (
-                <p>A geração oficial de PDF para arquivamento encontra-se pendente de serviço server-side; o portal disponibiliza visualização documental institucional estruturada e compatível com impressão.</p>
+                <p>A geração oficial de PDF server-side para arquivamento aguarda implementação no FastAPI (:3312); todos os templates TPL-01 a TPL-04 possuem visualização documental institucional estruturada e pronta para impressão em A4.</p>
               )}
             </div>
 

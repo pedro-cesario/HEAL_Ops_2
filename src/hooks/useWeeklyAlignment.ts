@@ -27,7 +27,16 @@ export function useWeeklyAlignment(
   meetingTitle: string,
   meetingDate: string
 ) {
-  const { dataMode, refreshTrigger, endpointConfig, pushToast } = useOps();
+  const {
+    dataMode,
+    refreshTrigger,
+    endpointConfig,
+    pushToast,
+    sessionEpoch,
+    teamMembers,
+    updateWeeklyPriorities,
+    updateWeeklyBaseline,
+  } = useOps();
 
   // 1. ESTADO DE NAVEGAÇÃO (imune a atualização automática)
   const [currentStage, setCurrentStage] = useState<WeeklyStageId>(1);
@@ -66,10 +75,11 @@ export function useWeeklyAlignment(
     return () => window.clearInterval(id);
   }, []);
 
-  // Carga inicial do rascunho da reunião (apenas ao trocar meetingId ou se ainda não carregado)
+  // Carga inicial do rascunho da reunião (apenas ao trocar meetingId ou se base demo for restaurada)
   useEffect(() => {
     let active = true;
-    const isSameMeeting = loadedMeetingRef.current === meetingId && draft !== null;
+    const cacheKey = `${meetingId}:${sessionEpoch}`;
+    const isSameMeeting = loadedMeetingRef.current === cacheKey && draft !== null;
     if (isSameMeeting) return;
 
     setInitialLoading(true);
@@ -88,7 +98,7 @@ export function useWeeklyAlignment(
         setDraft(null);
       } else {
         setDraft(res.draft);
-        loadedMeetingRef.current = meetingId;
+        loadedMeetingRef.current = cacheKey;
       }
       setInitialLoading(false);
     });
@@ -96,20 +106,17 @@ export function useWeeklyAlignment(
     return () => {
       active = false;
     };
-  }, [meetingId, meetingTitle, meetingDate, dataMode, draft]);
+  }, [meetingId, meetingTitle, meetingDate, dataMode, sessionEpoch, draft]);
 
   // Atualização silenciosa de indicadores, chamados e colaboradores
   // NUNCA dispara setInitialLoading, NUNCA altera currentStage, drawers ou rascunho
   useEffect(() => {
     let active = true;
 
-    Promise.all([
-      WeeklyAlignmentAdapter.fetchExternalSnapshot(dataMode, endpointConfig),
-      WeeklyAlignmentAdapter.loadCollaborators(dataMode),
-    ]).then(([snapshot, teamList]) => {
+    WeeklyAlignmentAdapter.fetchExternalSnapshot(dataMode, endpointConfig).then((snapshot) => {
       if (!active) return;
       setExternalSnapshot(snapshot);
-      setCollaborators(teamList);
+      setCollaborators(teamMembers);
 
       // Recalcula quantidade-alvo da meta silenciosamente se backlog elegível mudar
       const eligibleCount = snapshot.tickets.filter(
@@ -137,7 +144,7 @@ export function useWeeklyAlignment(
     return () => {
       active = false;
     };
-  }, [dataMode, refreshTrigger, endpointConfig]);
+  }, [dataMode, refreshTrigger, endpointConfig, teamMembers]);
 
   // Lista dinâmica de opções de colaboradores (sem nomes hardcoded)
   const collaboratorOptions = useMemo(() => {
@@ -195,7 +202,7 @@ export function useWeeklyAlignment(
     []
   );
 
-  // Mutações da Etapa 3 (Prioridades X/5 e Meta Semanal)
+  // Mutações da Etapa 4 (Prioridades X/5 e Meta Semanal)
   const eligibleBacklogCount = useMemo(
     () =>
       externalSnapshot.tickets.filter(
@@ -354,7 +361,7 @@ export function useWeeklyAlignment(
     [eligibleBacklogCount]
   );
 
-  // Mutações da Etapa 4 (Macroáreas)
+  // Mutações da Etapa 3 (Macroáreas)
   const updateMacroArea = useCallback(
     (
       areaId: MacroAreaId,
@@ -585,13 +592,13 @@ export function useWeeklyAlignment(
     if (!draft) return [];
     const rows: ConsolidatedCommitmentRow[] = [];
 
-    // 1. Prioridades da Etapa 3
+    // 1. Prioridades da Etapa 4
     draft.priorities.forEach((p) => {
       const key = `priority:${p.id}`;
       rows.push({
         key,
         origin: 'Prioridade',
-        originStage: 3,
+        originStage: 4,
         sourceRefId: p.id,
         commitment: `#${p.ticketId} — ${p.nextAction || p.ticketTitle}`,
         ownerName: p.primaryOwnerName || 'Não definido',
@@ -602,13 +609,13 @@ export function useWeeklyAlignment(
       });
     });
 
-    // 2. Meta Semanal da Etapa 3
+    // 2. Meta Semanal da Etapa 4
     if (draft.weeklyGoal.reductionPercent > 0 || draft.weeklyGoal.note.trim()) {
       const key = 'goal:weekly';
       rows.push({
         key,
         origin: 'Meta Semanal',
-        originStage: 3,
+        originStage: 4,
         sourceRefId: 'weeklyGoal',
         commitment: `Reduzir backlog em ${draft.weeklyGoal.reductionPercent}% (${draft.weeklyGoal.targetCount} chamado(s))`,
         ownerName: draft.weeklyGoal.ownerName || 'Não definido',
@@ -619,7 +626,7 @@ export function useWeeklyAlignment(
       });
     }
 
-    // 3. Entregas das Macroáreas (Etapa 4)
+    // 3. Entregas das Macroáreas (Etapa 3)
     draft.macroAreas.forEach((area) => {
       area.deliverables.forEach((del) => {
         const key = `macro:${area.id}:${del.id}`;
@@ -627,7 +634,7 @@ export function useWeeklyAlignment(
         rows.push({
           key,
           origin: 'Macroárea',
-          originStage: 4,
+          originStage: 3,
           sourceRefId: area.id,
           commitment: `[${area.name}] ${del.text}`,
           ownerName: area.primaryOwnerName || 'Não definido',
@@ -740,10 +747,43 @@ export function useWeeklyAlignment(
     []
   );
 
-  // Salvar rascunho / Finalizar alinhamento
+  const syncDraftPrioritiesToPortal = useCallback(
+    (sourceDraft: WeeklyAlignmentDraft) => {
+      updateWeeklyPriorities(
+        sourceDraft.priorities.map((p) => ({
+          id: p.id,
+          ticketId: p.ticketId,
+          title: p.ticketTitle,
+          owner: p.primaryOwnerName,
+          status:
+            p.ticketStatus === 'Pendente'
+              ? 'Aguardando terceiros'
+              : p.dueDate.toLowerCase().includes('hoje')
+                ? 'Risco de prazo'
+                : 'Em curso',
+          nextAction: p.nextAction,
+          dueDate: p.dueDate,
+          sourceAlignmentDate: `${sourceDraft.weekLabel} · ${sourceDraft.date}`,
+        }))
+      );
+      // Propaga parâmetros da meta semanal sem sobrescrever o snapshot congelado de início da semana
+      updateWeeklyBaseline({
+        weekLabel: sourceDraft.weekLabel,
+        weeklyGoalReductionPercent: sourceDraft.weeklyGoal.reductionPercent,
+        weeklyGoalTargetCount: sourceDraft.weeklyGoal.targetCount,
+        weeklyGoalOwnerName: sourceDraft.weeklyGoal.ownerName,
+        weeklyGoalDueDate: sourceDraft.weeklyGoal.dueDate,
+        weeklyGoalNote: sourceDraft.weeklyGoal.note,
+      });
+    },
+    [updateWeeklyPriorities, updateWeeklyBaseline]
+  );
+
+  // Salvar rascunho / Finalizar alinhamento (propaga prioridades para Visão Geral e Daily TPL-01)
   const saveDraftSession = useCallback(async () => {
     if (!draft) return;
     const res = await WeeklyAlignmentAdapter.persistDraftSession(dataMode, draft, false);
+    syncDraftPrioritiesToPortal(draft);
     setDraft((prev) =>
       prev ? { ...prev, hasUnsavedChanges: false, lastSavedAt: res.savedAt } : prev
     );
@@ -752,11 +792,12 @@ export function useWeeklyAlignment(
       description: res.note,
       tone: 'success',
     });
-  }, [draft, dataMode, pushToast]);
+  }, [draft, dataMode, pushToast, syncDraftPrioritiesToPortal]);
 
   const finalizeAlignment = useCallback(async () => {
     if (!draft) return;
     const res = await WeeklyAlignmentAdapter.persistDraftSession(dataMode, draft, true);
+    syncDraftPrioritiesToPortal(draft);
     setDraft((prev) =>
       prev
         ? {
@@ -774,7 +815,7 @@ export function useWeeklyAlignment(
       description: res.note,
       tone: 'success',
     });
-  }, [draft, dataMode, pushToast]);
+  }, [draft, dataMode, pushToast, syncDraftPrioritiesToPortal]);
 
   return {
     currentStage,

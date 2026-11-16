@@ -1,23 +1,24 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Briefcase,
   Calendar,
+  CheckCircle2,
   ChevronRight,
   Clock,
   ExternalLink,
+  MonitorPlay,
+  Plus,
   Search,
   Users,
 } from 'lucide-react';
 import {
   Drawer,
   EmptyState,
-  LoadingSkeletonGrid,
   SemanticLabel,
   UnavailableState,
 } from '../components/common/UiPrimitives';
 import { useOps } from '../context/OpsContext';
-import { GlpiAdapter, PortalAdapter, TeamAdapter } from '../services/opsAdapters';
-import type { TeamMember, TicketItem } from '../types/ops';
+import { GlpiAdapter } from '../services/opsAdapters';
 
 type MemberTabId =
   | 'perfil'
@@ -41,56 +42,54 @@ const MEMBER_TABS: { id: MemberTabId; label: string }[] = [
 ];
 
 export const TeamPage: React.FC = () => {
-  const { dataMode, refreshTrigger, triggerRefresh, endpointConfig, setActiveModule } = useOps();
+  const {
+    dataMode,
+    triggerRefresh,
+    endpointConfig,
+    setActiveModule,
+    pushToast,
+    teamMembers,
+    computedTickets,
+    addMemberAlignment,
+    addMemberFeedback,
+    updateMemberGoalProgress,
+    addMemberCommitment,
+    toggleMemberCommitmentStatus,
+    launchIndividualAlignmentForMember,
+  } = useOps();
 
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | undefined>();
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [tickets, setTickets] = useState<TicketItem[]>([]);
   const [macroFilter, setMacroFilter] = useState<string>('Todas');
   const [contractFilter, setContractFilter] = useState<string>('Todos');
   const [search, setSearch] = useState('');
-  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<MemberTabId>('perfil');
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setErrorMessage(undefined);
+  // Inline quick-add form states inside Drawer
+  const [alignSummary, setAlignSummary] = useState('');
+  const [alignMood, setAlignMood] = useState('Engajado');
+  const [fbType, setFbType] = useState<'Reconhecimento' | 'Desenvolvimento'>('Reconhecimento');
+  const [fbNote, setFbNote] = useState('');
+  const [commitOwner, setCommitOwner] = useState<'Colaborador' | 'Gestor'>('Colaborador');
+  const [commitDesc, setCommitDesc] = useState('');
+  const [commitDue, setCommitDue] = useState('22/11/2026');
 
-    Promise.all([
-      TeamAdapter.fetchTeam(dataMode),
-      PortalAdapter.fetchOverview(dataMode, endpointConfig),
-    ]).then(([teamRes, overviewRes]) => {
-      if (!active) return;
-      if (teamRes.errorMessage) {
-        setErrorMessage(teamRes.errorMessage);
-        setMembers([]);
-        setTickets([]);
-      } else {
-        setMembers(teamRes.data);
-        setTickets(overviewRes.data.tickets || []);
-      }
-      setLoading(false);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [dataMode, refreshTrigger, endpointConfig]);
+  const selectedMember = useMemo(
+    () => teamMembers.find((m) => m.id === selectedMemberId) || null,
+    [teamMembers, selectedMemberId]
+  );
 
   const macroAreas = useMemo(
-    () => ['Todas', ...Array.from(new Set(members.map((m) => m.macroArea)))],
-    [members]
+    () => ['Todas', ...Array.from(new Set(teamMembers.map((m) => m.macroArea)))],
+    [teamMembers]
   );
 
   const contracts = useMemo(
-    () => ['Todos', ...Array.from(new Set(members.map((m) => m.contractType)))],
-    [members]
+    () => ['Todos', ...Array.from(new Set(teamMembers.map((m) => m.contractType)))],
+    [teamMembers]
   );
 
   const filteredMembers = useMemo(() => {
-    return members.filter((m) => {
+    return teamMembers.filter((m) => {
       if (macroFilter !== 'Todas' && m.macroArea !== macroFilter) return false;
       if (contractFilter !== 'Todos' && m.contractType !== contractFilter) return false;
       if (!search.trim()) return true;
@@ -101,15 +100,13 @@ export const TeamPage: React.FC = () => {
         m.technicalReferences.some((r) => r.toLowerCase().includes(q))
       );
     });
-  }, [members, macroFilter, contractFilter, search]);
+  }, [teamMembers, macroFilter, contractFilter, search]);
 
-  if (loading) return <LoadingSkeletonGrid rows={5} />;
-
-  if (errorMessage) {
+  if (dataMode === 'disconnected' || dataMode === 'unavailable') {
     return (
       <UnavailableState
         title="Diretório da equipe indisponível"
-        description={errorMessage}
+        description="Cadastro da equipe indisponível sem conexão com o portal principal."
         onRetry={triggerRefresh}
         onConfigure={() => setActiveModule('configuracoes')}
       />
@@ -117,7 +114,7 @@ export const TeamPage: React.FC = () => {
   }
 
   const memberTickets = selectedMember
-    ? tickets.filter((t) => t.techName === selectedMember.name)
+    ? computedTickets.filter((t) => t.techName === selectedMember.name)
     : [];
 
   return (
@@ -127,7 +124,7 @@ export const TeamPage: React.FC = () => {
         <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3">
           <span className="text-xs text-slate-500 dark:text-slate-400">Colaboradores ativos</span>
           <div className="mt-1 font-mono text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-            {members.length}
+            {teamMembers.length}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-slate-400">
             4 vínculos e jornadas distintas
@@ -136,22 +133,24 @@ export const TeamPage: React.FC = () => {
         <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3">
           <span className="text-xs text-slate-500 dark:text-slate-400">Chamados em carteira</span>
           <div className="mt-1 font-mono text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-            {members.reduce((acc, m) => acc + m.activeTickets, 0)}
+            {teamMembers.reduce((acc, m) => acc + m.activeTickets, 0)}
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Atribuídos nominalmente</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">
+            Carteira nominal consolidada
+          </span>
         </div>
         <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3">
           <span className="text-xs text-slate-500 dark:text-slate-400">Concluídos na semana</span>
           <div className="mt-1 font-mono text-xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-            {members.reduce((acc, m) => acc + m.resolvedWeek, 0)}
+            {teamMembers.reduce((acc, m) => acc + m.resolvedWeek, 0)}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-slate-400">Consolidado por colaborador</span>
         </div>
         <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3">
           <span className="text-xs text-slate-500 dark:text-slate-400">Conformidade média POP</span>
           <div className="mt-1 font-mono text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-            {members.length
-              ? Math.round(members.reduce((acc, m) => acc + m.popComplianceRate, 0) / members.length)
+            {teamMembers.length
+              ? Math.round(teamMembers.reduce((acc, m) => acc + m.popComplianceRate, 0) / teamMembers.length)
               : 0}
             %
           </div>
@@ -220,7 +219,7 @@ export const TeamPage: React.FC = () => {
               key={member.id}
               type="button"
               onClick={() => {
-                setSelectedMember(member);
+                setSelectedMemberId(member.id);
                 setActiveTab('perfil');
               }}
               className="group flex flex-col justify-between rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-4 text-left hover:border-[#0F5E59] dark:hover:border-[#2DD4BF] transition-colors"
@@ -291,10 +290,10 @@ export const TeamPage: React.FC = () => {
         </div>
       )}
 
-      {/* Collaborator Detail Drawer (8 sub-views) */}
+      {/* Collaborator Detail Drawer (8 sub-views + live session editing + TPL-03 launcher) */}
       <Drawer
         open={Boolean(selectedMember)}
-        onClose={() => setSelectedMember(null)}
+        onClose={() => setSelectedMemberId(null)}
         title={selectedMember?.name || 'Colaborador'}
         subtitle={
           selectedMember
@@ -305,22 +304,35 @@ export const TeamPage: React.FC = () => {
       >
         {selectedMember && (
           <div className="space-y-4">
-            {/* Sub-tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 dark:border-[#243242] pb-2">
-              {MEMBER_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                    activeTab === tab.id
-                      ? 'bg-[#0F5E59] text-white dark:bg-[#2DD4BF] dark:text-slate-950'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#18222F]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-[#243242] pb-2">
+              <div className="flex items-center gap-1 overflow-x-auto">
+                {MEMBER_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                      activeTab === tab.id
+                        ? 'bg-[#0F5E59] text-white dark:bg-[#2DD4BF] dark:text-slate-950'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#18222F]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMemberId(null);
+                  launchIndividualAlignmentForMember(selectedMember);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 whitespace-nowrap"
+              >
+                <MonitorPlay size={13} />
+                <span>Conduzir TPL-03 (Individual)</span>
+              </button>
             </div>
 
             {activeTab === 'perfil' && (
@@ -381,22 +393,25 @@ export const TeamPage: React.FC = () => {
             )}
 
             {activeTab === 'indicadores' && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
-                  <span className="text-xs text-slate-500">Chamados ativos</span>
-                  <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.activeTickets}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
-                  <span className="text-xs text-slate-500">Concluídos (7d)</span>
-                  <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.resolvedWeek}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
-                  <span className="text-xs text-slate-500">1ª Resposta média</span>
-                  <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.avgResponseHours}h</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
-                  <span className="text-xs text-slate-500">Conformidade POP</span>
-                  <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.popComplianceRate}%</div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
+                    <span className="text-xs text-slate-500">Carteira nominal total</span>
+                    <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.activeTickets}</div>
+                    <span className="text-[10px] text-slate-400">{memberTickets.length} em destaque na amostra</span>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
+                    <span className="text-xs text-slate-500">Concluídos (7d)</span>
+                    <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.resolvedWeek}</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
+                    <span className="text-xs text-slate-500">1ª Resposta média</span>
+                    <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.avgResponseHours}h</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-3">
+                    <span className="text-xs text-slate-500">Conformidade POP</span>
+                    <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{selectedMember.popComplianceRate}%</div>
+                  </div>
                 </div>
               </div>
             )}
@@ -406,7 +421,7 @@ export const TeamPage: React.FC = () => {
                 {memberTickets.length === 0 ? (
                   <EmptyState
                     title="Sem chamados críticos em destaque na amostra atual"
-                    description="Consulte a fila completa no GLPI ou filtre na Visão Geral."
+                    description={`A carteira nominal completa possui ${selectedMember.activeTickets} chamado(s) no GLPI. Consulte a fila completa no GLPI.`}
                   />
                 ) : (
                   memberTickets.map((t) => (
@@ -438,7 +453,53 @@ export const TeamPage: React.FC = () => {
             )}
 
             {activeTab === 'alinhamentos' && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!alignSummary.trim()) return;
+                    addMemberAlignment(selectedMember.id, alignSummary, alignMood);
+                    setAlignSummary('');
+                    pushToast({
+                      title: 'Registro de alinhamento salvo na sessão (localStorage)',
+                      tone: 'success',
+                    });
+                  }}
+                  className="rounded-lg border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-3 space-y-2 text-xs"
+                >
+                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                    + Registrar nota de alinhamento (Sessão Local)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <input
+                      type="text"
+                      value={alignSummary}
+                      onChange={(e) => setAlignSummary(e.target.value)}
+                      placeholder="Síntese do acompanhamento 1:1..."
+                      className="sm:col-span-3 rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2.5 py-1.5"
+                    />
+                    <select
+                      value={alignMood}
+                      onChange={(e) => setAlignMood(e.target.value)}
+                      className="rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1.5"
+                    >
+                      <option value="Engajado">Engajado</option>
+                      <option value="Focado">Focado</option>
+                      <option value="Estável">Estável</option>
+                      <option value="Atenção">Atenção</option>
+                    </select>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 rounded bg-[#0F5E59] text-white dark:bg-[#14B8A6] dark:text-slate-950 px-3 py-1 font-medium"
+                    >
+                      <Plus size={12} />
+                      <span>Adicionar registro</span>
+                    </button>
+                  </div>
+                </form>
+
                 {selectedMember.alignments.map((al, i) => (
                   <div key={i} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs">
                     <div className="flex items-center justify-between font-mono text-slate-500">
@@ -452,7 +513,53 @@ export const TeamPage: React.FC = () => {
             )}
 
             {activeTab === 'feedbacks' && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!fbNote.trim()) return;
+                    addMemberFeedback(selectedMember.id, fbType, fbNote);
+                    setFbNote('');
+                    pushToast({
+                      title: 'Feedback registrado na sessão (localStorage)',
+                      tone: 'success',
+                    });
+                  }}
+                  className="rounded-lg border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-3 space-y-2 text-xs"
+                >
+                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                    + Registrar feedback estruturado (Sessão Local)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <select
+                      value={fbType}
+                      onChange={(e) =>
+                        setFbType(e.target.value as 'Reconhecimento' | 'Desenvolvimento')
+                      }
+                      className="rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1.5"
+                    >
+                      <option value="Reconhecimento">Reconhecimento</option>
+                      <option value="Desenvolvimento">Desenvolvimento</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={fbNote}
+                      onChange={(e) => setFbNote(e.target.value)}
+                      placeholder="Descreva o fato observado e o retorno..."
+                      className="sm:col-span-3 rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2.5 py-1.5"
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 rounded bg-[#0F5E59] text-white dark:bg-[#14B8A6] dark:text-slate-950 px-3 py-1 font-medium"
+                    >
+                      <Plus size={12} />
+                      <span>Registrar feedback</span>
+                    </button>
+                  </div>
+                </form>
+
                 {selectedMember.feedbacks.map((fb, i) => (
                   <div key={i} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs">
                     <div className="flex items-center justify-between">
@@ -472,20 +579,37 @@ export const TeamPage: React.FC = () => {
             {activeTab === 'metas' && (
               <div className="space-y-2.5">
                 {selectedMember.goals.map((goal) => (
-                  <div key={goal.id} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs">
+                  <div key={goal.id} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{goal.title}</span>
                       <span className="font-mono text-slate-500">Alvo: {goal.target}</span>
                     </div>
-                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                       <div
-                        className="h-full bg-[#0F5E59] dark:bg-[#2DD4BF]"
+                        className="h-full bg-[#0F5E59] dark:bg-[#2DD4BF] transition-all"
                         style={{ width: `${goal.progress}%` }}
                       />
                     </div>
-                    <div className="mt-1.5 flex justify-between text-[11px] text-slate-500 font-mono tabular-nums">
-                      <span>Progresso: {goal.progress}%</span>
-                      <span>Prazo: {goal.dueDate}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 font-mono tabular-nums">
+                      <span>Progresso: {goal.progress}% · Prazo: {goal.dueDate}</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          aria-label={`Ajustar progresso da meta ${goal.title}`}
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={goal.progress}
+                          onChange={(e) =>
+                            updateMemberGoalProgress(
+                              selectedMember.id,
+                              goal.id,
+                              Number(e.target.value)
+                            )
+                          }
+                          className="w-28 accent-[#0F5E59] dark:accent-[#2DD4BF]"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -493,21 +617,77 @@ export const TeamPage: React.FC = () => {
             )}
 
             {activeTab === 'compromissos' && (
-              <div className="space-y-2.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Compromissos recíprocos pactuados entre Colaborador e Gestão (TPL-03 · Base demonstrativa).
-                </p>
+              <div className="space-y-3">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!commitDesc.trim()) return;
+                    addMemberCommitment(selectedMember.id, commitOwner, commitDesc, commitDue);
+                    setCommitDesc('');
+                    pushToast({
+                      title: 'Compromisso recíproco adicionado na sessão',
+                      tone: 'success',
+                    });
+                  }}
+                  className="rounded-lg border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-3 space-y-2 text-xs"
+                >
+                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                    + Pactuar novo compromisso (TPL-03 · Sessão Local)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <select
+                      value={commitOwner}
+                      onChange={(e) => setCommitOwner(e.target.value as 'Colaborador' | 'Gestor')}
+                      className="sm:col-span-3 rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1.5"
+                    >
+                      <option value="Colaborador">Colaborador</option>
+                      <option value="Gestor">Gestor</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={commitDesc}
+                      onChange={(e) => setCommitDesc(e.target.value)}
+                      placeholder="Compromisso assumido..."
+                      className="sm:col-span-6 rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2.5 py-1.5"
+                    />
+                    <input
+                      type="text"
+                      value={commitDue}
+                      onChange={(e) => setCommitDue(e.target.value)}
+                      className="sm:col-span-3 rounded border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] px-2 py-1.5 font-mono"
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 rounded bg-[#0F5E59] text-white dark:bg-[#14B8A6] dark:text-slate-950 px-3 py-1 font-medium"
+                    >
+                      <Plus size={12} />
+                      <span>Pactuar</span>
+                    </button>
+                  </div>
+                </form>
+
                 {selectedMember.commitments.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-[#0F5E59] dark:text-[#2DD4BF]">
-                        Parte: {c.owner === 'Gestor' ? 'Gestão' : `Colaborador (${c.owner})`}
-                      </span>
-                      <span className="font-mono text-slate-500 shrink-0">
-                        {c.status} · Prazo {c.dueDate}
-                      </span>
+                  <div key={c.id} className="rounded-lg border border-slate-200 dark:border-[#243242] p-3 text-xs flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-[#0F5E59] dark:text-[#2DD4BF]">
+                        Parte: {c.owner === 'Gestor' ? 'Gestão' : `Colaborador (${selectedMember.name})`} · Prazo {c.dueDate}
+                      </div>
+                      <p className="mt-1 text-sm text-slate-800 dark:text-slate-200">{c.description}</p>
                     </div>
-                    <p className="mt-1 text-sm text-slate-800 dark:text-slate-200">{c.description}</p>
+                    <button
+                      type="button"
+                      onClick={() => toggleMemberCommitmentStatus(selectedMember.id, c.id)}
+                      className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium shrink-0 ${
+                        c.status === 'Concluído'
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+                          : 'border-slate-200 dark:border-[#243242] text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      <CheckCircle2 size={12} />
+                      <span>{c.status}</span>
+                    </button>
                   </div>
                 ))}
               </div>

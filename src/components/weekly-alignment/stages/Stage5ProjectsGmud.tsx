@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Calendar, FolderKanban, Plus, ShieldAlert } from 'lucide-react';
-import { EmptyState } from '../../common/UiPrimitives';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Calendar,
+  FolderKanban,
+  Plus,
+  ShieldAlert,
+} from 'lucide-react';
+import { useOps } from '../../../context/OpsContext';
 import type { ProjectGmudItem } from '../../../types/weeklyAlignment';
+import { EmptyState } from '../../common/UiPrimitives';
 
 export const Stage5ProjectsGmud: React.FC<{
   projects: ProjectGmudItem[];
   onAddReferral: (projectId: string, text: string, ownerName: string) => void;
-}> = ({ projects, onAddReferral }) => {
+  onOpenGmud042?: () => void;
+}> = ({ projects, onAddReferral, onOpenGmud042 }) => {
+  const { gmud042 } = useOps();
   const [draftTexts, setDraftTexts] = useState<Record<string, string>>({});
   const [draftOwners, setDraftOwners] = useState<Record<string, string>>({});
 
@@ -35,6 +45,8 @@ export const Stage5ProjectsGmud: React.FC<{
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
         {projects.map((pg) => {
+          const isGmud042 = pg.code.toUpperCase() === 'GMUD-042';
+          const effectiveStatus = isGmud042 ? gmud042.status : pg.status;
           const textVal = draftTexts[pg.id] || '';
           const ownerVal = draftOwners[pg.id] ?? pg.ownerName;
 
@@ -47,7 +59,7 @@ export const Stage5ProjectsGmud: React.FC<{
                 <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-[#1D2836] pb-2">
                   <div>
                     <div className="font-mono text-[11px] font-semibold text-[#0F5E59] dark:text-[#2DD4BF]">
-                      {pg.code} · {pg.status}
+                      {pg.code} · {effectiveStatus}
                     </div>
                     <h3 className="mt-0.5 font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
                       {pg.name}
@@ -71,7 +83,7 @@ export const Stage5ProjectsGmud: React.FC<{
                   <div>
                     <span className="block text-[11px] text-slate-400">Responsável</span>
                     <span className="font-medium text-slate-800 dark:text-slate-200">
-                      {pg.ownerName}
+                      {isGmud042 ? gmud042.technicalLead : pg.ownerName}
                     </span>
                   </div>
                   <div>
@@ -89,6 +101,17 @@ export const Stage5ProjectsGmud: React.FC<{
                     {pg.nextAction}
                   </p>
                 </div>
+
+                {isGmud042 && onOpenGmud042 && (
+                  <button
+                    type="button"
+                    onClick={onOpenGmud042}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-[#0F5E59]/40 dark:border-[#2DD4BF]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#0F5E59] dark:text-[#2DD4BF] hover:bg-[#0F5E59]/10"
+                  >
+                    <span>Abrir registro completo GMUD-042</span>
+                    <ArrowUpRight size={13} />
+                  </button>
+                )}
 
                 {/* Encaminhamentos registrados durante a reunião */}
                 {pg.referrals.length > 0 && (

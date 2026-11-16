@@ -35,6 +35,7 @@ export const WeeklyAlignmentWorkspace: React.FC<{
     dismissToast,
     triggerRefresh,
     setActiveModule,
+    launchGmud042,
   } = useOps();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -199,7 +200,7 @@ export const WeeklyAlignmentWorkspace: React.FC<{
   const handleSelectPriorityFromDrawer = (ticket: typeof externalSnapshot.tickets[number]) => {
     setIndicatorDrawerItem(null);
     setFreeMode(false);
-    setCurrentStage(3);
+    setCurrentStage(4);
     openPriorityEditor(ticket);
   };
 
@@ -210,13 +211,13 @@ export const WeeklyAlignmentWorkspace: React.FC<{
       case 2:
         return `${externalSnapshot.indicators.filter((i) => i.available).length}/8 indicadores`;
       case 3:
-        return `${draft.priorities.length}/5 prioridades · Meta -${draft.weeklyGoal.reductionPercent}%`;
-      case 4:
         return `${
           draft.macroAreas.filter(
             (m) => m.primaryOwnerId && m.primaryOwnerName && m.primaryOwnerName !== 'Não definido'
           ).length
         }/4 macroáreas`;
+      case 4:
+        return `${draft.priorities.length}/5 prioridades · Meta -${draft.weeklyGoal.reductionPercent}%`;
       case 5:
         return `${draft.projectsGmud.length} item(ns)`;
       case 6:
@@ -434,6 +435,19 @@ export const WeeklyAlignmentWorkspace: React.FC<{
           )}
 
           {currentStage === 3 && (
+            <Stage4MacroAreas
+              macroAreas={draft.macroAreas}
+              collaborators={collaboratorOptions}
+              onUpdateArea={updateMacroArea}
+              onAddDeliverable={addMacroDeliverable}
+              onToggleDeliverable={toggleMacroDeliverable}
+              onRemoveDeliverable={removeMacroDeliverable}
+              onAddPending={addMacroPending}
+              onTogglePending={toggleMacroPending}
+            />
+          )}
+
+          {currentStage === 4 && (
             <Stage3PrioritiesGoals
               tickets={externalSnapshot.tickets}
               priorities={draft.priorities}
@@ -465,23 +479,20 @@ export const WeeklyAlignmentWorkspace: React.FC<{
             />
           )}
 
-          {currentStage === 4 && (
-            <Stage4MacroAreas
-              macroAreas={draft.macroAreas}
-              collaborators={collaboratorOptions}
-              onUpdateArea={updateMacroArea}
-              onAddDeliverable={addMacroDeliverable}
-              onToggleDeliverable={toggleMacroDeliverable}
-              onRemoveDeliverable={removeMacroDeliverable}
-              onAddPending={addMacroPending}
-              onTogglePending={toggleMacroPending}
-            />
-          )}
-
           {currentStage === 5 && (
             <Stage5ProjectsGmud
               projects={draft.projectsGmud}
               onAddReferral={addProjectReferral}
+              onOpenGmud042={() => {
+                if (document.fullscreenElement) {
+                  document.exitFullscreen().catch(() => {});
+                }
+                const patch = buildMeetingSyncPatch();
+                if (patch && onSyncToMeetingList) {
+                  onSyncToMeetingList(meeting.id, patch);
+                }
+                launchGmud042();
+              }}
             />
           )}
 

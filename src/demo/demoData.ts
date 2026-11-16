@@ -1320,7 +1320,7 @@ export const DEMO_MEETINGS: MeetingRecord[] = [
     facilitator: 'Gestor de TI',
     participants: ['Carlos Henrique', 'Mariana Costa', 'Rafael Oliveira', 'Juliana Almeida', 'Thiago Mendes', 'Beatriz Santos'],
     version: 'v0.9 (Preparação)',
-    contextSummary: 'Revisão completa em 8 etapas: resultados da semana 45, carteira ativa de 16 chamados na amostra, referências técnicas por macroárea, GMUDs ativas e definição das 5 prioridades oficiais da semana.',
+    contextSummary: 'Revisão completa em 7 etapas: abertura e retrospectiva da semana 45, indicadores operacionais, chamados e 5 prioridades oficiais, macroáreas, GMUDs ativas e acordos pactuados.',
     decisions: [
       { id: 'd-3', decision: 'Manter limite máximo de 5 prioridades ativas na carteira da Visão Geral', owner: 'Gestor de TI', dueDate: '16/11' },
       { id: 'd-4', decision: 'Estabelecer auditoria amostral de 15% nos chamados encerrados', owner: 'Beatriz Santos', dueDate: '18/11' },

@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { Modal } from '../components/common/UiPrimitives';
 import { useOps } from '../context/OpsContext';
-import { DEMO_KPIS, DEMO_TEAM, DEMO_TICKETS, DEMO_WEEKLY_PRIORITIES } from '../demo/demoData';
 import type { MeetingRecord } from '../types/ops';
 
 export type TemplateViewMode = 'executive' | 'presentation' | 'official_document';
@@ -45,7 +44,14 @@ export const MeetingTemplateWorkspace: React.FC<{
   onAddCommitment,
   onTriggerPendingPdf,
 }) => {
-  const { endpointConfig, dataMode } = useOps();
+  const {
+    endpointConfig,
+    dataMode,
+    weeklyPriorities,
+    computedTickets,
+    computedKpis,
+    teamMembers,
+  } = useOps();
   const [mode, setMode] = useState<TemplateViewMode>(initialMode);
   const [slideIndex, setSlideIndex] = useState(0);
   const [freeMode, setFreeMode] = useState(false);
@@ -67,35 +73,18 @@ export const MeetingTemplateWorkspace: React.FC<{
   const timeBasisLabel = endpointConfig.staleTicketTimeBasis === 'uteis' ? 'úteis' : 'corridas';
   const staleRuleLabel = `> ${thresholdHours}h ${timeBasisLabel}`;
 
-  const dynamicTickets = DEMO_TICKETS.map((t) => {
-    const baseReasons = t.inclusionReasons.filter((r) => r !== 'sem_atualizacao');
-    const isStale = t.hoursWithoutUpdate > thresholdHours;
-    return {
-      ...t,
-      inclusionReasons: isStale ? [...baseReasons, 'sem_atualizacao'] : baseReasons,
-    };
-  });
-  const noUpdateTickets = dynamicTickets.filter((t) => t.inclusionReasons.includes('sem_atualizacao'));
-
-  const dynamicKpis = DEMO_KPIS.map((k) => {
-    if (k.key !== 'sem_atualizacao') return k;
-    return {
-      ...k,
-      value: noUpdateTickets.length,
-      subtitle: `Regra ref.: ${staleRuleLabel} (parametrizável)`,
-    };
-  });
+  const noUpdateTickets = computedTickets.filter((t) => t.inclusionReasons.includes('sem_atualizacao'));
 
   // Build slides per template code (TPL-01..TPL-04)
   const slides: SlideItem[] = (() => {
     if (meeting.templateCode === 'TPL-01') {
       return [
         {
-          title: '1. Resultados Anteriores & Backlog',
-          subtitle: 'Panorama consolidado herdado da operação diária',
+          title: '1. Evolução da Semana',
+          subtitle: 'Como começamos a semana no TPL-02 e como estamos agora',
           content: (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {dynamicKpis.slice(0, 4).map((k) => (
+              {computedKpis.slice(0, 4).map((k) => (
                 <div key={k.key} className="rounded-lg border border-slate-200 dark:border-[#243242] p-4 bg-white dark:bg-[#111923]">
                   <span className="text-xs text-slate-500 dark:text-slate-400">{k.label}</span>
                   <div className="mt-1 font-mono text-3xl font-bold tabular-nums">{k.value}</div>
@@ -106,11 +95,11 @@ export const MeetingTemplateWorkspace: React.FC<{
           ),
         },
         {
-          title: '2. Prioridades Herdadas do Alinhamento Semanal',
-          subtitle: 'Carteira única aprovada no TPL-02 (sem prioridades paralelas)',
+          title: '2. Parecer das Macroáreas',
+          subtitle: 'Rodada rápida vinculada às prioridades oficiais do TPL-02',
           content: (
             <div className="space-y-2.5">
-              {DEMO_WEEKLY_PRIORITIES.map((p) => (
+              {weeklyPriorities.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-[#243242] p-3.5 bg-white dark:bg-[#111923]">
                   <div className="min-w-0">
                     <div className="font-mono text-xs text-slate-500 dark:text-slate-400">
@@ -126,8 +115,8 @@ export const MeetingTemplateWorkspace: React.FC<{
           ),
         },
         {
-          title: '3. Chamados Sem Atualização & Impedimentos',
-          subtitle: `Itens acima de ${thresholdHours}h ${timeBasisLabel} e bloqueios por macroárea`,
+          title: '3. Fila Crítica',
+          subtitle: `Criticidade operacional, não conformidades POP e itens acima de ${thresholdHours}h ${timeBasisLabel}`,
           content: (
             <div className="space-y-2.5">
               {noUpdateTickets.length === 0 ? (
@@ -163,42 +152,30 @@ export const MeetingTemplateWorkspace: React.FC<{
           ),
         },
         {
-          title: '4. Referências por Área, Desafio do Dia e Próximas Ações',
-          subtitle: 'Compromissos imediatos da equipe',
+          title: '4. Desafio & Ata',
+          subtitle: 'Desafio do dia, decisões registradas e compromissos do turno',
           content: (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4 bg-white dark:bg-[#111923] space-y-2">
-                <h4 className="font-semibold text-sm">Referências por Macroárea</h4>
-                <ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
-                  <li><strong>Assistencial:</strong> Carlos Henrique & Juliana Almeida</li>
-                  <li><strong>Sistemas Clínicos (PEP):</strong> Mariana Costa</li>
-                  <li><strong>Infraestrutura:</strong> Rafael Oliveira & Thiago Mendes</li>
-                  <li><strong>Governança:</strong> Beatriz Santos</li>
-                </ul>
-              </div>
-              <div className="rounded-lg border border-slate-200 dark:border-[#243242] p-4 bg-white dark:bg-[#111923] space-y-2">
-                <h4 className="font-semibold text-sm">Desafio do Dia</h4>
-                <p className="text-sm text-slate-700 dark:text-slate-300">
-                  Zerar chamados assistenciais sem técnico nominal antes das 14h e validar rollback completo da GMUD-042.
-                </p>
-              </div>
-            </div>
+            <ul className="list-disc pl-5 space-y-2 text-base">
+              {meeting.nextSteps.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
           ),
         },
       ];
     }
 
     if (meeting.templateCode === 'TPL-02') {
-      const openCount = dynamicTickets.length;
-      const popCount = dynamicTickets.filter((t) => t.isPopNonCompliant).length;
+      const openCount = computedTickets.length;
+      const popCount = computedTickets.filter((t) => t.isPopNonCompliant).length;
       return [
         {
-          title: 'Etapa 1 de 8 · Abertura',
+          title: 'Etapa 1 de 7 · Abertura e Retrospectiva',
           subtitle: 'Contexto institucional e objetivos da semana',
           content: <p className="text-base leading-relaxed">{meeting.contextSummary}</p>,
         },
         {
-          title: 'Etapa 2 de 8 · Resultados da Semana Anterior',
+          title: 'Etapa 2 de 7 · Indicadores Operacionais',
           subtitle: 'Indicadores deduplicados de entrega e POP (base demonstrativa)',
           content: (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -218,29 +195,38 @@ export const MeetingTemplateWorkspace: React.FC<{
           ),
         },
         {
-          title: 'Etapa 3 de 8 · Backlog e Pendências',
-          subtitle: `${openCount} chamados ativos · ${popCount} em desconformidade POP`,
-          content: (
-            <p className="text-base leading-relaxed">
-              Revisão dos {noUpdateTickets.length} item(ns) sem atualização ({staleRuleLabel}) e pendências críticas de fornecedores.
-            </p>
-          ),
-        },
-        {
-          title: 'Etapa 4 de 8 · Áreas e Referências Técnicas',
+          title: 'Etapa 3 de 7 · Macroáreas e Responsáveis',
           subtitle: 'Cobertura assistencial, sistemas, infraestrutura e corporativo',
           content: (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {DEMO_TEAM.slice(0, 4).map((m) => (
+              {teamMembers.slice(0, 4).map((m) => (
                 <div key={m.id} className="rounded border border-slate-200 dark:border-[#243242] p-3 text-sm">
-                  <strong>{m.macroArea}</strong> · {m.name} ({m.activeTickets} ativos)
+                  <strong>{m.macroArea}</strong> · {m.name} ({m.activeTickets} ativos na carteira nominal)
                 </div>
               ))}
             </div>
           ),
         },
         {
-          title: 'Etapa 5 de 8 · Projetos e GMUD',
+          title: 'Etapa 4 de 7 · Chamados, Prioridades e Metas',
+          subtitle: `${openCount} chamados na amostra · ${popCount} POP · ${weeklyPriorities.length} prioridades oficiais`,
+          content: (
+            <div className="space-y-2.5 text-sm">
+              <p className="leading-relaxed">
+                Revisão dos {noUpdateTickets.length} item(ns) sem atualização ({staleRuleLabel}) e prioridades da semana herdadas pela Daily e Visão Geral:
+              </p>
+              <ul className="space-y-1.5">
+                {weeklyPriorities.map((p) => (
+                  <li key={p.id} className="rounded border border-slate-200 dark:border-[#243242] p-2.5">
+                    <strong>#{p.ticketId}</strong> — {p.title} ({p.owner} · {p.status})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+        },
+        {
+          title: 'Etapa 5 de 7 · Projetos e GMUD',
           subtitle: 'Mudanças programadas e riscos operacionais',
           content: (
             <p className="text-base leading-relaxed">
@@ -249,20 +235,7 @@ export const MeetingTemplateWorkspace: React.FC<{
           ),
         },
         {
-          title: 'Etapa 6 de 8 · Metas e Prioridades',
-          subtitle: 'Definição das 5 prioridades oficiais herdadas pela Daily e Visão Geral',
-          content: (
-            <ul className="space-y-2 text-sm">
-              {DEMO_WEEKLY_PRIORITIES.map((p) => (
-                <li key={p.id} className="rounded border border-slate-200 dark:border-[#243242] p-2.5">
-                  <strong>#{p.ticketId}</strong> — {p.title} ({p.owner})
-                </li>
-              ))}
-            </ul>
-          ),
-        },
-        {
-          title: 'Etapa 7 de 8 · Acordos e Responsabilidades',
+          title: 'Etapa 6 de 7 · Acordos e Compromissos',
           subtitle: 'Decisões registradas e prazos pactuados',
           content: (
             <ul className="space-y-2 text-sm">
@@ -279,7 +252,7 @@ export const MeetingTemplateWorkspace: React.FC<{
           ),
         },
         {
-          title: 'Etapa 8 de 8 · Encerramento',
+          title: 'Etapa 7 de 7 · Encerramento',
           subtitle: 'Próximos passos e publicação da ata oficial',
           content: (
             <ul className="list-disc pl-5 space-y-2 text-base">
@@ -804,6 +777,36 @@ export const MeetingTemplateWorkspace: React.FC<{
               </h3>
               <p className="text-slate-700 leading-relaxed">{meeting.contextSummary}</p>
             </section>
+
+            {(meeting.templateCode === 'TPL-01' || meeting.templateCode === 'TPL-02') && (
+              <section className="print-avoid-break space-y-2 text-xs">
+                <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-1">
+                  Prioridades Oficiais da Semana ({weeklyPriorities.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border border-slate-200 text-left">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        <th className="p-2 border-b border-slate-200">Chamado</th>
+                        <th className="p-2 border-b border-slate-200">Prioridade</th>
+                        <th className="p-2 border-b border-slate-200">Responsável</th>
+                        <th className="p-2 border-b border-slate-200">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeklyPriorities.map((p) => (
+                        <tr key={p.id} className="border-b border-slate-200">
+                          <td className="p-2 font-mono">#{p.ticketId}</td>
+                          <td className="p-2">{p.title}</td>
+                          <td className="p-2">{p.owner}</td>
+                          <td className="p-2">{p.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
 
             <section className="space-y-2 text-xs">
               <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-1">

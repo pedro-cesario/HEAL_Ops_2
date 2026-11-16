@@ -22,7 +22,15 @@ import { ReportsAdapter } from '../services/opsAdapters';
 import type { ReportCatalogItem, ReportId } from '../types/ops';
 
 export const ReportsPage: React.FC = () => {
-  const { dataMode, refreshTrigger, triggerRefresh, setActiveModule, pushToast, theme, endpointConfig } = useOps();
+  const {
+    dataMode,
+    triggerRefresh,
+    setActiveModule,
+    pushToast,
+    theme,
+    endpointConfig,
+    computedTickets,
+  } = useOps();
 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
@@ -51,7 +59,7 @@ export const ReportsPage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [dataMode, refreshTrigger]);
+  }, [dataMode]);
 
   const filteredCatalog = useMemo(() => {
     return catalog.filter((item) => {
@@ -69,12 +77,119 @@ export const ReportsPage: React.FC = () => {
     [catalog, selectedId, filteredCatalog]
   );
 
+  const periodComputedReport = useMemo(() => {
+    if (!activeReport) return null;
+    const factor = period === '7d' ? 0.28 : period === '30d' ? 1 : 2.75;
+    const thresholdHours = Math.max(1, endpointConfig.staleTicketThresholdHours || 24);
+    const basisLabel = endpointConfig.staleTicketTimeBasis === 'uteis' ? 'úteis' : 'corridas';
+
+    const scaleNumber = (val: number, preserveSingleDigit = false) => {
+      if (preserveSingleDigit && val <= 6) return val;
+      return Math.max(1, Math.round(val * factor));
+    };
+
+    let chartData = activeReport.chartData.map((pt, idx) => {
+      const pointName =
+        period === '7d' && activeReport.chartType === 'line'
+          ? `D-${activeReport.chartData.length - idx}`
+          : period === '90d' && activeReport.chartType === 'line'
+            ? `Mês/S${idx + 1}`
+            : pt.name;
+      return {
+        ...pt,
+        name: pointName,
+        primary: scaleNumber(pt.primary, activeReport.id === 'sem_tecnico' || activeReport.id === 'sem_atualizacao'),
+        secondary:
+          typeof pt.secondary === 'number'
+            ? scaleNumber(pt.secondary, activeReport.id === 'sem_tecnico')
+            : undefined,
+      };
+    });
+
+    let rows = activeReport.rows.map((r) => ({
+      ...r,
+      count: scaleNumber(r.count, activeReport.id === 'sem_tecnico' || activeReport.id === 'sem_atualizacao'),
+      note: period === '30d' ? r.note : `${r.note} (recorte demonstrativo ${period})`,
+    }));
+
+    if (activeReport.id === 'sem_atualizacao') {
+      const staleNow = computedTickets.filter((t) => t.hoursWithoutUpdate > thresholdHours);
+      const bucket1 = staleNow.filter((t) => t.hoursWithoutUpdate <= thresholdHours * 1.5).length;
+      const bucket2 = staleNow.filter(
+        (t) => t.hoursWithoutUpdate > thresholdHours * 1.5 && t.hoursWithoutUpdate <= thresholdHours * 2
+      ).length;
+      const bucket3 = staleNow.filter((t) => t.hoursWithoutUpdate > thresholdHours * 2).length;
+      const windowScale = period === '7d' ? 1 : period === '30d' ? 1 : 2;
+      chartData = [
+        { name: `${thresholdHours}h–${Math.round(thresholdHours * 1.5)}h`, primary: bucket1 * windowScale, secondary: undefined },
+        { name: `${Math.round(thresholdHours * 1.5) + 1}h–${thresholdHours * 2}h`, primary: bucket2 * windowScale, secondary: undefined },
+        { name: `>${thresholdHours * 2}h`, primary: bucket3 * windowScale, secondary: undefined },
+      ];
+      const totalStale = staleNow.length || 1;
+      rows = [
+        {
+          label: `Faixa ${thresholdHours}h–${Math.round(thresholdHours * 1.5)}h sem interação`,
+          count: bucket1 * windowScale,
+          share: `${Math.round((bucket1 / totalStale) * 100)}%`,
+          avgHours: `${Math.round(thresholdHours * 1.25)}h`,
+          note: `Calculado ao vivo pela regra > ${thresholdHours}h ${basisLabel} (${period})`,
+        },
+        {
+          label: `Faixa ${Math.round(thresholdHours * 1.5) + 1}h–${thresholdHours * 2}h`,
+          count: bucket2 * windowScale,
+          share: `${Math.round((bucket2 / totalStale) * 100)}%`,
+          avgHours: `${Math.round(thresholdHours * 1.75)}h`,
+          note: `Acompanhamento com referência da macroárea (${period})`,
+        },
+        {
+          label: `Acima de ${thresholdHours * 2}h críticas`,
+          count: bucket3 * windowScale,
+          share: `${Math.round((bucket3 / totalStale) * 100)}%`,
+          avgHours: `${Math.round(thresholdHours * 2.5)}h`,
+          note: `Prioridade imediata em Daily TPL-01 e TPL-02 (${period})`,
+        },
+      ];
+    }
+
+    return {
+      ...activeReport,
+      chartData,
+      rows,
+    };
+  }, [activeReport, period, endpointConfig, computedTickets]);
+
   const handleExportCsv = () => {
-    if (!activeReport) return;
+    if (!periodComputedReport) return;
+    const csvEscape = (value: string | number) => {
+      const str = String(value ?? '').replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const lines = [
+      `# HEAL Ops 2.0 - Exportacao Local (BASE DEMONSTRATIVA / SESSAO)`,
+      `# Relatorio: ${periodComputedReport.title} | Janela: ${period} | Fonte oficial pendente: FastAPI (:3312)`,
+      ['Dimensao', 'Quantidade', 'Participacao', 'Tempo Medio', 'Observacao Operacional'].map(csvEscape).join(';'),
+      ...periodComputedReport.rows.map((r) =>
+        [r.label, r.count, r.share, r.avgHours, r.note].map(csvEscape).join(';')
+      ),
+    ];
+
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `heal-ops-demo-${periodComputedReport.id}-${period}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
     pushToast({
-      title: 'Exportação aguardando backend analítico',
-      description: `Na demonstração os dados não representam produção. O contrato de exportação oficial será servido pelo FastAPI (:3312) para "${activeReport.title}".`,
-      tone: 'warning',
+      title: 'CSV demonstrativo exportado localmente',
+      description: `Arquivo gerado a partir da base demonstrativa (${period}). A exportação oficial de produção depende do FastAPI (:3312).`,
+      tone: 'info',
     });
   };
 
@@ -136,7 +251,7 @@ export const ReportsPage: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-[#1D2836]">
           {filteredCatalog.map((item) => {
-            const isSelected = activeReport?.id === item.id;
+            const isSelected = periodComputedReport?.id === item.id;
             return (
               <button
                 key={item.id}
@@ -171,7 +286,7 @@ export const ReportsPage: React.FC = () => {
 
       {/* Right Analytical Detail (8 cols) */}
       <section className="lg:col-span-8 space-y-3.5">
-        {!activeReport ? (
+        {!periodComputedReport ? (
           <EmptyState
             title="Selecione um relatório"
             description="Escolha um indicador no catálogo ao lado para visualizar gráficos, definição e drilldown."
@@ -182,15 +297,15 @@ export const ReportsPage: React.FC = () => {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-[11px] font-medium text-[#0F5E59] dark:text-[#2DD4BF]">
-                    {activeReport.group} · Janela {period === '7d' ? 'Últimos 7 dias' : period === '30d' ? 'Últimos 30 dias' : 'Últimos 90 dias'}
+                    {periodComputedReport.group} · Janela {period === '7d' ? 'Últimos 7 dias' : period === '30d' ? 'Últimos 30 dias' : 'Últimos 90 dias'}
                   </div>
                   <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
-                    {activeReport.title}
+                    {periodComputedReport.title}
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                    {activeReport.id === 'sem_atualizacao'
+                    {periodComputedReport.id === 'sem_atualizacao'
                       ? `Tickets ativos sem interação válida acima de ${endpointConfig.staleTicketThresholdHours}h ${endpointConfig.staleTicketTimeBasis} (regra gerencial parametrizável).`
-                      : activeReport.summary}
+                      : periodComputedReport.summary}
                   </p>
                 </div>
 
@@ -214,10 +329,10 @@ export const ReportsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleExportCsv}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#18222F]"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#18222F] whitespace-nowrap"
                   >
                     <Download size={13} />
-                    <span>Exportar</span>
+                    <span>Exportar CSV (Demo)</span>
                   </button>
                 </div>
               </div>
@@ -231,10 +346,10 @@ export const ReportsPage: React.FC = () => {
                       Origem e Definição
                     </div>
                     <p className="text-slate-600 dark:text-slate-400">
-                      <strong>Fonte:</strong> {activeReport.origin}
+                      <strong>Fonte:</strong> {periodComputedReport.origin}
                     </p>
                     <p className="text-slate-600 dark:text-slate-400">
-                      <strong>Regra:</strong> {activeReport.definition}
+                      <strong>Regra:</strong> {periodComputedReport.definition}
                     </p>
                   </div>
                 </div>
@@ -245,7 +360,7 @@ export const ReportsPage: React.FC = () => {
                       Integridade de Contagem
                     </div>
                     <p className="text-slate-600 dark:text-slate-400">
-                      {activeReport.doubleCountGuard}
+                      {periodComputedReport.doubleCountGuard}
                     </p>
                   </div>
                 </div>
@@ -254,8 +369,8 @@ export const ReportsPage: React.FC = () => {
               {/* Chart */}
               <div className="h-[240px] w-full pt-2">
                 <ResponsiveContainer width="100%" height="100%">
-                  {activeReport.chartType === 'line' ? (
-                    <LineChart data={activeReport.chartData}>
+                  {periodComputedReport.chartType === 'line' ? (
+                    <LineChart data={periodComputedReport.chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
                       <YAxis tick={{ fontSize: 11 }} stroke="#64748b" />
@@ -272,16 +387,16 @@ export const ReportsPage: React.FC = () => {
                       <Line
                         type="monotone"
                         dataKey="primary"
-                        name={activeReport.primaryLabel}
+                        name={periodComputedReport.primaryLabel}
                         stroke={theme === 'dark' ? '#2DD4BF' : '#0F5E59'}
                         strokeWidth={2}
                         dot={{ r: 3 }}
                       />
-                      {activeReport.secondaryLabel && (
+                      {periodComputedReport.secondaryLabel && (
                         <Line
                           type="monotone"
                           dataKey="secondary"
-                          name={activeReport.secondaryLabel}
+                          name={periodComputedReport.secondaryLabel}
                           stroke="#D97706"
                           strokeWidth={2}
                           strokeDasharray="4 4"
@@ -290,7 +405,7 @@ export const ReportsPage: React.FC = () => {
                       )}
                     </LineChart>
                   ) : (
-                    <BarChart data={activeReport.chartData}>
+                    <BarChart data={periodComputedReport.chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
                       <YAxis tick={{ fontSize: 11 }} stroke="#64748b" />
@@ -306,14 +421,14 @@ export const ReportsPage: React.FC = () => {
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Bar
                         dataKey="primary"
-                        name={activeReport.primaryLabel}
+                        name={periodComputedReport.primaryLabel}
                         fill={theme === 'dark' ? '#2DD4BF' : '#0F5E59'}
                         radius={[3, 3, 0, 0]}
                       />
-                      {activeReport.secondaryLabel && (
+                      {periodComputedReport.secondaryLabel && (
                         <Bar
                           dataKey="secondary"
-                          name={activeReport.secondaryLabel}
+                          name={periodComputedReport.secondaryLabel}
                           fill="#64748B"
                           radius={[3, 3, 0, 0]}
                         />
@@ -331,7 +446,7 @@ export const ReportsPage: React.FC = () => {
                   Detalhamento Analítico (Dados demonstrativos · Exportação oficial dependente de backend)
                 </h3>
                 <span className="font-mono text-[11px] text-slate-400">
-                  {activeReport.rows.length} linha(s)
+                  {periodComputedReport.rows.length} linha(s)
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -346,7 +461,7 @@ export const ReportsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-[#1D2836]">
-                  {activeReport.rows.map((r, i) => (
+                  {periodComputedReport.rows.map((r, i) => (
                     <tr key={i} className="hover:bg-slate-50/70 dark:hover:bg-[#18222F]/50">
                       <td className="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">
                         {r.label}

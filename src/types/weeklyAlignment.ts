@@ -24,15 +24,15 @@ export const WEEKLY_ALIGNMENT_STAGES: AlignmentStageMeta[] = [
   },
   {
     id: 3,
-    shortLabel: 'Prioridades & Meta',
-    title: '3. Chamados, Prioridades e Metas',
-    subtitle: 'Seleção da carteira semanal (até 5 prioridades), responsáveis, apoios e meta de backlog',
+    shortLabel: 'Macroáreas',
+    title: '3. Macroáreas e Responsáveis',
+    subtitle: 'Governança ao vivo de Suporte Técnico, Sistemas, Infraestrutura e Gestão',
   },
   {
     id: 4,
-    shortLabel: 'Macroáreas',
-    title: '4. Macroáreas e Responsáveis',
-    subtitle: 'Governança ao vivo de Suporte Técnico, Sistemas, Infraestrutura e Gestão',
+    shortLabel: 'Prioridades & Meta',
+    title: '4. Chamados, Prioridades e Metas',
+    subtitle: 'Seleção da carteira semanal (até 5 prioridades), responsáveis, apoios e meta de backlog',
   },
   {
     id: 5,

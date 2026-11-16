@@ -9,13 +9,14 @@ import {
 } from 'lucide-react';
 import {
   EmptyState,
-  LoadingSkeletonGrid,
   Modal,
   UnavailableState,
 } from '../components/common/UiPrimitives';
+import { DailyAlignmentWorkspace } from '../components/daily-alignment/DailyAlignmentWorkspace';
+import { Gmud042Workspace } from '../components/gmud/Gmud042Workspace';
+import { IndividualAlignmentWorkspace } from '../components/individual-alignment/IndividualAlignmentWorkspace';
 import { WeeklyAlignmentWorkspace } from '../components/weekly-alignment/WeeklyAlignmentWorkspace';
 import { useOps } from '../context/OpsContext';
-import { MeetingsDocumentsAdapter } from '../services/opsAdapters';
 import { MeetingTemplateWorkspace, type TemplateViewMode } from '../templates/MeetingTemplates';
 import type { MeetingCategory, MeetingRecord, MeetingTemplateCode } from '../types/ops';
 
@@ -30,11 +31,18 @@ const WORKFLOW_STAGES = [
 ];
 
 export const MeetingsPage: React.FC = () => {
-  const { dataMode, triggerRefresh, setActiveModule, pushToast } = useOps();
+  const {
+    dataMode,
+    triggerRefresh,
+    setActiveModule,
+    pushToast,
+    meetings,
+    upsertMeetingPatch,
+    createMeetingRecord,
+    pendingMeetingLaunch,
+    clearPendingMeetingLaunch,
+  } = useOps();
 
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | undefined>();
-  const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<'Todas' | 'Próxima' | 'Em andamento' | 'Rascunho' | 'Finalizada'>('Todas');
   const [activeWorkspace, setActiveWorkspace] = useState<{
     meetingId: string;
@@ -46,25 +54,13 @@ export const MeetingsPage: React.FC = () => {
   const [newTemplate, setNewTemplate] = useState<MeetingTemplateCode>('TPL-01');
 
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setErrorMessage(undefined);
-
-    MeetingsDocumentsAdapter.fetchMeetings(dataMode).then((res) => {
-      if (!active) return;
-      if (res.errorMessage) {
-        setErrorMessage(res.errorMessage);
-        setMeetings([]);
-      } else {
-        setMeetings(res.data);
-      }
-      setLoading(false);
+    if (!pendingMeetingLaunch) return;
+    setActiveWorkspace({
+      meetingId: pendingMeetingLaunch.meetingId,
+      mode: pendingMeetingLaunch.mode,
     });
-
-    return () => {
-      active = false;
-    };
-  }, [dataMode]);
+    clearPendingMeetingLaunch();
+  }, [pendingMeetingLaunch, clearPendingMeetingLaunch]);
 
   const filteredMeetings = useMemo(() => {
     if (statusFilter === 'Todas') return meetings;
@@ -85,22 +81,17 @@ export const MeetingsPage: React.FC = () => {
   );
 
   const handleAddDecision = (meetingId: string, decision: string, owner: string, dueDate: string) => {
-    setMeetings((prev) =>
-      prev.map((m) =>
-        m.id === meetingId
-          ? {
-              ...m,
-              decisions: [
-                ...m.decisions,
-                { id: `d-${Date.now()}`, decision, owner, dueDate },
-              ],
-            }
-          : m
-      )
-    );
+    const target = meetings.find((m) => m.id === meetingId);
+    if (!target) return;
+    upsertMeetingPatch(meetingId, {
+      decisions: [
+        ...target.decisions,
+        { id: `d-${Date.now()}`, decision, owner, dueDate },
+      ],
+    });
     pushToast({
       title: 'Decisão registrada na sessão',
-      description: 'Sincronização definitiva depende do endpoint de reuniões do backend.',
+      description: 'Salva no navegador; sincronização definitiva depende do endpoint de reuniões do backend.',
       tone: 'info',
     });
   };
@@ -112,22 +103,17 @@ export const MeetingsPage: React.FC = () => {
     action: string,
     dueDate: string
   ) => {
-    setMeetings((prev) =>
-      prev.map((m) =>
-        m.id === meetingId
-          ? {
-              ...m,
-              commitments: [
-                ...m.commitments,
-                { id: `c-${Date.now()}`, party, owner, action, dueDate, status: 'Pendente' },
-              ],
-            }
-          : m
-      )
-    );
+    const target = meetings.find((m) => m.id === meetingId);
+    if (!target) return;
+    upsertMeetingPatch(meetingId, {
+      commitments: [
+        ...target.commitments,
+        { id: `c-${Date.now()}`, party, owner, action, dueDate, status: 'Pendente' },
+      ],
+    });
     pushToast({
       title: 'Compromisso registrado na sessão',
-      description: 'Funcional apenas na sessão local. Persistência definitiva depende do endpoint de reuniões do backend.',
+      description: 'Salvo no navegador nesta sessão. Persistência definitiva depende do endpoint de reuniões do backend.',
       tone: 'info',
     });
   };
@@ -135,13 +121,12 @@ export const MeetingsPage: React.FC = () => {
   const handleCreateMeeting = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    const created: MeetingRecord = {
-      id: `mtg-${Date.now()}`,
+    const created = createMeetingRecord({
       templateCode: newTemplate,
       type: newType,
       title: newTitle.trim(),
-      date: '16/11/2026',
-      time: '10:00',
+      date: new Date().toLocaleDateString('pt-BR'),
+      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       status: 'Rascunho',
       facilitator: 'Gestor de TI',
       participants: ['Gestor de TI', 'Equipe Operacional'],
@@ -151,34 +136,32 @@ export const MeetingsPage: React.FC = () => {
       commitments: [],
       nextSteps: ['Revisar indicadores e registrar decisões em modo apresentação'],
       documentStatus: 'Visualização disponível · PDF server-side pendente',
-    };
-    setMeetings((prev) => [created, ...prev]);
+    });
     setCreateModalOpen(false);
     setNewTitle('');
     setActiveWorkspace({
       meetingId: created.id,
-      mode: created.templateCode === 'TPL-02' ? 'presentation' : 'executive',
+      mode:
+        created.templateCode === 'TPL-01' || created.templateCode === 'TPL-02'
+          ? 'presentation'
+          : 'executive',
     });
     pushToast({
       title: 'Rascunho criado na sessão',
-      description: 'Alterações ficam disponíveis apenas nesta sessão até a conexão com o backend.',
+      description: 'Alterações ficam salvas no navegador até a conexão oficial com o backend.',
       tone: 'info',
     });
   };
 
   const handleSyncMeetingPatch = (meetingId: string, patch: Partial<MeetingRecord>) => {
-    setMeetings((prev) =>
-      prev.map((m) => (m.id === meetingId ? { ...m, ...patch } : m))
-    );
+    upsertMeetingPatch(meetingId, patch);
   };
 
-  if (loading) return <LoadingSkeletonGrid rows={5} />;
-
-  if (errorMessage) {
+  if (dataMode === 'disconnected' || dataMode === 'unavailable') {
     return (
       <UnavailableState
         title="Central de reuniões indisponível"
-        description={errorMessage}
+        description={`A listagem oficial de reuniões está ${dataMode === 'disconnected' ? 'desconectada' : 'indisponível'} no modo de simulação ativo.`}
         onRetry={triggerRefresh}
         onConfigure={() => setActiveModule('configuracoes')}
       />
@@ -186,6 +169,26 @@ export const MeetingsPage: React.FC = () => {
   }
 
   if (selectedMeeting && activeWorkspace) {
+    if (
+      selectedMeeting.templateCode === 'TPL-01' &&
+      activeWorkspace.mode !== 'official_document'
+    ) {
+      return (
+        <DailyAlignmentWorkspace
+          meeting={selectedMeeting}
+          onSyncToMeetingList={handleSyncMeetingPatch}
+          onExit={(patch) => {
+            if (patch) handleSyncMeetingPatch(selectedMeeting.id, patch);
+            setActiveWorkspace(null);
+          }}
+          onOpenOfficialDocument={(patch) => {
+            handleSyncMeetingPatch(selectedMeeting.id, patch);
+            setActiveWorkspace({ meetingId: selectedMeeting.id, mode: 'official_document' });
+          }}
+        />
+      );
+    }
+
     if (
       selectedMeeting.templateCode === 'TPL-02' &&
       activeWorkspace.mode !== 'official_document'
@@ -202,6 +205,25 @@ export const MeetingsPage: React.FC = () => {
             handleSyncMeetingPatch(selectedMeeting.id, patch);
             setActiveWorkspace({ meetingId: selectedMeeting.id, mode: 'official_document' });
           }}
+        />
+      );
+    }
+
+    if (selectedMeeting.templateCode === 'TPL-03') {
+      return (
+        <IndividualAlignmentWorkspace
+          meeting={selectedMeeting}
+          initialView={activeWorkspace.mode === 'official_document' ? 'document' : 'editor'}
+          onClose={() => setActiveWorkspace(null)}
+        />
+      );
+    }
+
+    if (selectedMeeting.templateCode === 'TPL-04') {
+      return (
+        <Gmud042Workspace
+          initialView={activeWorkspace.mode === 'official_document' ? 'document' : 'workspace'}
+          onClose={() => setActiveWorkspace(null)}
         />
       );
     }
@@ -326,7 +348,7 @@ export const MeetingsPage: React.FC = () => {
                   </span>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {mtg.templateCode === 'TPL-02' ? (
+                    {mtg.templateCode === 'TPL-01' || mtg.templateCode === 'TPL-02' ? (
                       <>
                         <button
                           type="button"
@@ -334,7 +356,11 @@ export const MeetingsPage: React.FC = () => {
                           className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
                         >
                           <MonitorPlay size={13} />
-                          <span>Abrir Alinhamento Semanal</span>
+                          <span>
+                            {mtg.templateCode === 'TPL-01'
+                              ? 'Abrir Daily Operacional'
+                              : 'Abrir Alinhamento Semanal'}
+                          </span>
                         </button>
                         <button
                           type="button"
@@ -350,23 +376,19 @@ export const MeetingsPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'executive' })}
-                          className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
+                          className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
                         >
                           <ShieldCheck size={13} />
-                          <span>Executiva</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'presentation' })}
-                          className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-2.5 py-1 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
-                        >
-                          <MonitorPlay size={13} />
-                          <span>Apresentar</span>
+                          <span>
+                            {mtg.templateCode === 'TPL-03'
+                              ? 'Abrir Alinhamento Individual'
+                              : 'Abrir GMUD-042'}
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'official_document' })}
-                          className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
+                          className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
                         >
                           <FileText size={13} />
                           <span>Documento</span>

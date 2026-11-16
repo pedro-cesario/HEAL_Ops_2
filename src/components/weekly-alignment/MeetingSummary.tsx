@@ -90,7 +90,7 @@ export const MeetingSummary: React.FC<{
 
         <button
           type="button"
-          onClick={() => onGoToStage(3)}
+          onClick={() => onGoToStage(4)}
           className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3 text-left hover:border-[#0F5E59] transition-colors"
         >
           <div className="flex items-center justify-between text-[11px] text-slate-500">
@@ -105,7 +105,7 @@ export const MeetingSummary: React.FC<{
 
         <button
           type="button"
-          onClick={() => onGoToStage(3)}
+          onClick={() => onGoToStage(4)}
           className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3 text-left hover:border-[#0F5E59] transition-colors"
         >
           <div className="text-[11px] text-slate-500">Meta de Backlog</div>
@@ -119,7 +119,7 @@ export const MeetingSummary: React.FC<{
 
         <button
           type="button"
-          onClick={() => onGoToStage(4)}
+          onClick={() => onGoToStage(3)}
           className="rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] p-3 text-left hover:border-[#0F5E59] transition-colors"
         >
           <div className="text-[11px] text-slate-500">Macroáreas</div>
@@ -165,7 +165,7 @@ export const MeetingSummary: React.FC<{
             </h3>
             <button
               type="button"
-              onClick={() => onGoToStage(3)}
+              onClick={() => onGoToStage(4)}
               className="text-[11px] font-medium text-[#0F5E59] dark:text-[#2DD4BF] hover:underline"
             >
               Revisar
@@ -203,7 +203,7 @@ export const MeetingSummary: React.FC<{
             </h3>
             <button
               type="button"
-              onClick={() => onGoToStage(4)}
+              onClick={() => onGoToStage(3)}
               className="text-[11px] font-medium text-[#0F5E59] dark:text-[#2DD4BF] hover:underline"
             >
               Revisar

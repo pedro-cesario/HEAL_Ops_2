@@ -12,6 +12,7 @@ import type {
   WeeklyIndicatorKey,
 } from '../types/weeklyAlignment';
 import { PortalAdapter } from './opsAdapters';
+import { loadWeeklyDraftFromStorage, saveWeeklyDraftToStorage } from './sessionStorage';
 
 export interface ExternalWeeklyOpsSnapshot {
   available: boolean;
@@ -26,7 +27,7 @@ export interface ExternalWeeklyOpsSnapshot {
 export const WeeklyAlignmentAdapter = {
   /**
    * Carrega o rascunho inicial do Alinhamento Semanal (TPL-02).
-   * Preparado para consumir endpoint dedicado do FastAPI (:3312) quando homologado.
+   * Restaura rascunho da sessão local (localStorage) caso exista para o meetingId.
    */
   async loadAlignmentDraft(
     mode: RuntimeDataMode,
@@ -47,6 +48,10 @@ export const WeeklyAlignmentAdapter = {
         errorMessage: 'Serviço de reuniões temporariamente indisponível.',
       };
     }
+    const stored = loadWeeklyDraftFromStorage(meetingId);
+    if (stored) {
+      return { draft: stored };
+    }
     return {
       draft: createDemoWeeklyAlignmentDraft(meetingId, meetingTitle, meetingDate, eligibleBacklogCount),
     };
@@ -64,7 +69,6 @@ export const WeeklyAlignmentAdapter = {
 
   /**
    * Busca indicadores operacionais e chamados para a Etapa 2 e Etapa 3.
-   * Nunca inventa números em estados indisponíveis/desconectados.
    */
   async fetchExternalSnapshot(
     mode: RuntimeDataMode,
@@ -188,8 +192,8 @@ export const WeeklyAlignmentAdapter = {
   },
 
   /**
-   * Contrato tipado para persistência futura do rascunho/finalização no backend.
-   * No modo demonstração opera estritamente na sessão em memória.
+   * Persiste o rascunho/finalização na sessão local (localStorage).
+   * Preparado para contrato FastAPI (:3312) futuro.
    */
   async persistDraftSession(
     mode: RuntimeDataMode,
@@ -197,19 +201,28 @@ export const WeeklyAlignmentAdapter = {
     finalize = false
   ): Promise<{ savedAt: string; backendSynced: boolean; note: string }> {
     const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const nextDraft: WeeklyAlignmentDraft = {
+      ...draft,
+      hasUnsavedChanges: false,
+      lastSavedAt: now,
+      status: finalize ? 'Finalizado' : draft.status,
+      finalizedAt: finalize ? now : draft.finalizedAt,
+    };
+    saveWeeklyDraftToStorage(draft.meetingId, nextDraft);
+
     if (mode === 'demo' || mode === 'stale') {
       return {
         savedAt: now,
         backendSynced: false,
         note: finalize
-          ? 'Alinhamento finalizado na sessão local. Gravação definitiva aguarda contrato FastAPI (:3312).'
-          : 'Rascunho salvo na sessão local. Persistência definitiva depende de integração com o backend.',
+          ? 'Alinhamento finalizado e salvo localmente (localStorage) com propagação para Visão Geral e Daily. Gravação definitiva aguarda FastAPI (:3312).'
+          : 'Rascunho salvo localmente (localStorage) e sincronizado com a sessão. Persistência definitiva depende de integração com o backend.',
       };
     }
     return {
       savedAt: now,
       backendSynced: false,
-      note: 'Sem backend conectado para persistência definitiva.',
+      note: 'Sem backend conectado; rascunho mantido na sessão local.',
     };
   },
 };

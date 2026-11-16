@@ -321,3 +321,144 @@ export interface NotificationItem {
   targetModule: ModuleId;
   read: boolean;
 }
+
+export interface WeeklyBaselineSnapshot {
+  alignmentDate: string;
+  weekLabel: string;
+  initialActiveCount: number;
+  openedSinceAlignment: number;
+  closedSinceAlignment: number;
+  weeklyGoalReductionPercent: number;
+  weeklyGoalTargetCount: number;
+  weeklyGoalOwnerName: string;
+  weeklyGoalDueDate: string;
+  weeklyGoalNote: string;
+}
+
+export interface MacroAreaConfigItem {
+  id: string;
+  name: string;
+  defaultLeadName: string;
+  active: boolean;
+}
+
+export type IndividualMeetingType =
+  | 'Alinhamento Mensal'
+  | 'Feedback de Reconhecimento'
+  | 'Feedback de Desenvolvimento'
+  | 'Registro Esporádico';
+
+export interface BilateralCommitmentItem {
+  id: string;
+  party: 'Colaborador' | 'Gestor';
+  ownerName: string;
+  description: string;
+  dueDate: string;
+  status: 'Em dia' | 'Pendente' | 'Concluído';
+  linkedPendingId?: string;
+}
+
+export interface PreviousCommitmentEvaluation {
+  commitmentId: string;
+  party: 'Colaborador' | 'Gestor';
+  description: string;
+  dueDate: string;
+  previousStatus: 'Em dia' | 'Pendente' | 'Concluído';
+  outcome: 'Cumprido' | 'Parcial' | 'Em aberto (reapresentado)';
+  evaluationNote: string;
+}
+
+export interface IndividualAlignmentRecord {
+  id: string;
+  meetingId: string;
+  collaboratorId: string;
+  collaboratorName: string;
+  collaboratorRole: string;
+  macroArea: string;
+  date: string;
+  conductorName: string;
+  meetingType: IndividualMeetingType;
+  strengths: string;
+  developmentPoints: string;
+  previousCommitmentsEvaluation: PreviousCommitmentEvaluation[];
+  nextAlignmentGoals: string[];
+  collaboratorCommitments: BilateralCommitmentItem[];
+  managerCommitments: BilateralCommitmentItem[];
+  negotiationsAndAgreements: string;
+  trackingNotes: string;
+  finalConsiderations: string;
+  nextAlignmentDate: string;
+  acknowledgedInSession: boolean;
+  acknowledgmentDate: string;
+  status: 'Rascunho' | 'Finalizado';
+  lastSavedAt: string | null;
+}
+
+export type GmudWorkflowStatus =
+  | 'Rascunho'
+  | 'Análise'
+  | 'Aguardando Aprovação'
+  | 'Aprovada'
+  | 'Em Execução'
+  | 'Validação'
+  | 'Concluída'
+  | 'Rejeitada'
+  | 'Cancelada'
+  | 'Rollback Executado';
+
+export type GmudChecklistPhase = 'Pré-Execução' | 'Execução' | 'Validação' | 'Encerramento';
+
+export interface GmudChecklistItem {
+  id: string;
+  phase: GmudChecklistPhase;
+  text: string;
+  ownerName: string;
+  done: boolean;
+  fromOriginalRecord: boolean;
+}
+
+export interface GmudTransitionLog {
+  id: string;
+  fromStatus: GmudWorkflowStatus;
+  toStatus: GmudWorkflowStatus;
+  actorName: string;
+  note: string;
+  timestamp: string;
+  isSimulatedDemo: true;
+}
+
+export interface GmudApprovalSlot {
+  id: string;
+  role: string;
+  approverName: string;
+  decision: 'Pendente' | 'Aprovado (Simulação)' | 'Rejeitado (Simulação)';
+  note: string;
+  updatedAt: string;
+}
+
+export interface GmudRecord {
+  id: string;
+  code: string;
+  title: string;
+  status: GmudWorkflowStatus;
+  objective: string;
+  justification: string;
+  scope: string;
+  equipmentAndLocations: string;
+  technicalLead: string;
+  executingTeam: string;
+  executionWindow: string;
+  impactAndRiskAnalysis: string;
+  dependencies: string;
+  executionPlan: string;
+  communicationPlan: string;
+  testPlan: string;
+  rollbackPlan: string;
+  evidencesNote: string;
+  approvals: GmudApprovalSlot[];
+  closureResult: string;
+  checklist: GmudChecklistItem[];
+  transitions: GmudTransitionLog[];
+  lastUpdatedAt: string;
+}
+

@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   Calendar,
+  CheckCircle2,
   Clock,
   ExternalLink,
   FolderOpen,
@@ -10,7 +11,9 @@ import {
   Layers,
   ListChecks,
   Mail,
+  MonitorPlay,
   PauseCircle,
+  ShieldPlus,
   Sparkles,
   UserCheck,
   UserX,
@@ -26,15 +29,11 @@ import { useOps } from '../context/OpsContext';
 import {
   GlpiAdapter,
   Microsoft365Adapter,
-  PortalAdapter,
 } from '../services/opsAdapters';
 import type {
   AgendaEvent,
   MailPendingItem,
-  OperationalKpi,
   TicketFilterKey,
-  TicketItem,
-  WeeklyPriority,
 } from '../types/ops';
 
 const KPI_ICONS: Record<TicketFilterKey, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -49,61 +48,49 @@ const KPI_ICONS: Record<TicketFilterKey, React.ComponentType<{ size?: number; cl
   tempo_medio: Clock,
 };
 
-export const OverviewPage: React.FC<{
-  onTicketsLoaded?: (tickets: TicketItem[]) => void;
-}> = ({ onTicketsLoaded }) => {
+export const OverviewPage: React.FC = () => {
   const {
     dataMode,
-    refreshTrigger,
     triggerRefresh,
     endpointConfig,
     openTicketDrawer,
     setActiveModule,
     pushToast,
+    computedKpis,
+    weeklyPriorities,
+    meetings,
+    resolvedMailIds,
+    markMailResolved,
+    addPending,
+    launchMeetingWorkspace,
   } = useOps();
 
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | undefined>();
-  const [kpis, setKpis] = useState<OperationalKpi[]>([]);
-  const [priorities, setPriorities] = useState<WeeklyPriority[]>([]);
   const [agendaDay, setAgendaDay] = useState<'hoje' | 'amanha'>('hoje');
   const [agendaEvents, setAgendaEvents] = useState<AgendaEvent[]>([]);
   const [mailItems, setMailItems] = useState<MailPendingItem[]>([]);
   const [mailFilter, setMailFilter] = useState<'todos' | 'exige_acao' | 'aguardando_resposta' | 'nao_lido' | 'sinalizado'>('todos');
   const [selectedMail, setSelectedMail] = useState<MailPendingItem | null>(null);
+  const [selectedAgendaEvent, setSelectedAgendaEvent] = useState<AgendaEvent | null>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setErrorMessage(undefined);
 
     Promise.all([
-      PortalAdapter.fetchOverview(dataMode, endpointConfig),
       Microsoft365Adapter.fetchAgenda(dataMode, endpointConfig),
       Microsoft365Adapter.fetchMailbox(dataMode, endpointConfig),
-    ]).then(([overviewRes, agendaRes, mailRes]) => {
+    ]).then(([agendaRes, mailRes]) => {
       if (!active) return;
-      if (overviewRes.errorMessage) {
-        setErrorMessage(overviewRes.errorMessage);
-        setKpis([]);
-        setPriorities([]);
-        setAgendaEvents([]);
-        setMailItems([]);
-        onTicketsLoaded?.([]);
-      } else {
-        setKpis(overviewRes.data.kpis);
-        setPriorities(overviewRes.data.priorities.slice(0, 5));
-        onTicketsLoaded?.(overviewRes.data.tickets);
-        setAgendaEvents(agendaRes.data);
-        setMailItems(mailRes.data);
-      }
+      setAgendaEvents(agendaRes.data);
+      setMailItems(mailRes.data);
       setLoading(false);
     });
 
     return () => {
       active = false;
     };
-  }, [dataMode, refreshTrigger, endpointConfig, onTicketsLoaded]);
+  }, [dataMode, endpointConfig]);
 
   if (loading) {
     return (
@@ -112,7 +99,7 @@ export const OverviewPage: React.FC<{
           {Array.from({ length: 8 }).map((_, idx) => (
             <div
               key={idx}
-              className="h-[88px] rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923] animate-pulse"
+              className="h-[88px] rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923]"
             />
           ))}
         </div>
@@ -121,11 +108,15 @@ export const OverviewPage: React.FC<{
     );
   }
 
-  if (errorMessage) {
+  if (dataMode === 'disconnected' || dataMode === 'unavailable') {
     return (
       <UnavailableState
         title={dataMode === 'disconnected' ? 'Portal aguardando conexão com o backend' : 'Indicadores operacionais indisponíveis'}
-        description={errorMessage}
+        description={
+          dataMode === 'disconnected'
+            ? 'Backend principal FastAPI (:3312) não conectado. Configure a integração ou ative o modo demonstração.'
+            : 'Serviço temporariamente indisponível ao consultar indicadores operacionais.'
+        }
         onRetry={triggerRefresh}
         onConfigure={() => setActiveModule('configuracoes')}
       />
@@ -139,12 +130,67 @@ export const OverviewPage: React.FC<{
     return item.category === mailFilter;
   });
 
+  const handleOpenWeeklyAlignment = () => {
+    const tpl02 = meetings.find((m) => m.templateCode === 'TPL-02');
+    if (tpl02) {
+      launchMeetingWorkspace(tpl02.id, 'presentation');
+    } else {
+      setActiveModule('reunioes');
+    }
+  };
+
+  const handleAgendaNavigate = (ev: AgendaEvent) => {
+    const loc = (ev.locationOrLink || ev.title).toLowerCase();
+    if (loc.includes('tpl-01') || loc.includes('daily')) {
+      const m = meetings.find((x) => x.templateCode === 'TPL-01');
+      if (m) return launchMeetingWorkspace(m.id, 'presentation');
+    }
+    if (loc.includes('tpl-02') || loc.includes('semanal')) {
+      const m = meetings.find((x) => x.templateCode === 'TPL-02');
+      if (m) return launchMeetingWorkspace(m.id, 'presentation');
+    }
+    if (loc.includes('tpl-03') || loc.includes('individual')) {
+      const m = meetings.find((x) => x.templateCode === 'TPL-03');
+      if (m) return launchMeetingWorkspace(m.id, 'executive');
+    }
+    if (loc.includes('tpl-04') || loc.includes('gmud')) {
+      const m = meetings.find((x) => x.templateCode === 'TPL-04');
+      if (m) return launchMeetingWorkspace(m.id, 'executive');
+    }
+    if (ev.type === 'Prazo' || loc.includes('auditoria')) {
+      setSelectedAgendaEvent(null);
+      setActiveModule('pendencias-auditoria');
+      return;
+    }
+    setSelectedAgendaEvent(null);
+    setActiveModule('reunioes');
+  };
+
+  const handleConvertMailToLocalPending = (mail: MailPendingItem) => {
+    addPending({
+      origin: 'GLPI',
+      description: `[E-mail] ${mail.subject} — ${mail.sender}`,
+      owner: 'Gestão Operacional',
+      criticality: mail.requiresAction ? 'Alta' : 'Média',
+      dueDate: mail.dueDate || 'Esta semana',
+      status: 'Aberta',
+      nextAction: mail.actionReason,
+    });
+    markMailResolved(mail.id);
+    setSelectedMail(null);
+    pushToast({
+      title: 'Pendência registrada na sessão local',
+      description: 'Item adicionado em Pendências e Auditoria. Sincronização automática do Outlook aguarda OAuth/M365.',
+      tone: 'success',
+    });
+  };
+
   return (
     <div className="space-y-3.5 max-w-[1600px] mx-auto">
       {/* Compact KPI Strip — 8 Operational Cards */}
       <section aria-label="Indicadores operacionais">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {kpis.map((kpi) => {
+          {computedKpis.map((kpi) => {
             const Icon = KPI_ICONS[kpi.key] || FolderOpen;
             const isPopCritical = kpi.key === 'sem_tecnico' && (kpi.popSummary?.popNonCompliant ?? 0) > 0;
             return (
@@ -254,21 +300,21 @@ export const OverviewPage: React.FC<{
                   Prioridades da Semana
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                  Carteira aprovada no Alinhamento Semanal · Máximo 5 ativas
+                  Carteira viva sincronizada com TPL-02 e Daily TPL-01 ({weeklyPriorities.length}/5 ativas)
                 </p>
               </div>
             </div>
             <button
               type="button"
-              onClick={() => setActiveModule('reunioes')}
+              onClick={handleOpenWeeklyAlignment}
               className="text-xs font-medium text-[#0F5E59] dark:text-[#2DD4BF] hover:underline whitespace-nowrap shrink-0"
             >
-              Ver alinhamento
+              Editar no TPL-02
             </button>
           </div>
 
           <div className="flex-1 divide-y divide-slate-100 dark:divide-[#1D2836]">
-            {priorities.length === 0 ? (
+            {weeklyPriorities.length === 0 ? (
               <div className="p-4">
                 <EmptyState
                   title="Sem prioridades aprovadas"
@@ -276,7 +322,7 @@ export const OverviewPage: React.FC<{
                 />
               </div>
             ) : (
-              priorities.map((pri) => {
+              weeklyPriorities.map((pri) => {
                 const glpiUrl = GlpiAdapter.getTicketExternalUrl(endpointConfig, pri.ticketId);
                 return (
                   <div key={pri.id} className="px-4 py-2.5 hover:bg-slate-50/70 dark:hover:bg-[#18222F]/50 transition-colors">
@@ -333,7 +379,7 @@ export const OverviewPage: React.FC<{
           </div>
         </section>
 
-        {/* Center: Minha Agenda (3.5 -> 3 cols) */}
+        {/* Center: Minha Agenda (3 cols) */}
         <section
           aria-label="Minha Agenda"
           className="xl:col-span-3 flex flex-col rounded-lg border border-slate-200 dark:border-[#243242] bg-white dark:bg-[#111923]"
@@ -374,7 +420,7 @@ export const OverviewPage: React.FC<{
 
           {!endpointConfig.m365Configured && (
             <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] px-4 py-2 text-[11px] text-slate-600 dark:text-slate-300">
-              <span>Microsoft 365: não configurado · Exibindo ritos locais</span>
+              <span>Microsoft 365: não configurado · Ritos locais</span>
               <button
                 type="button"
                 onClick={() => setActiveModule('configuracoes')}
@@ -395,7 +441,12 @@ export const OverviewPage: React.FC<{
               </div>
             ) : (
               visibleAgenda.map((ev) => (
-                <div key={ev.id} className="px-4 py-2.5">
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => setSelectedAgendaEvent(ev)}
+                  className="block w-full px-4 py-2.5 text-left hover:bg-slate-50/70 dark:hover:bg-[#18222F]/50 transition-colors"
+                >
                   <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                     <span className="font-mono font-semibold tabular-nums text-[#0F5E59] dark:text-[#2DD4BF]">
                       {ev.startTime}–{ev.endTime}
@@ -410,7 +461,7 @@ export const OverviewPage: React.FC<{
                       {[ev.participants, ev.locationOrLink].filter(Boolean).join(' · ')}
                     </p>
                   )}
-                </div>
+                </button>
               ))
             )}
           </div>
@@ -481,39 +532,94 @@ export const OverviewPage: React.FC<{
                 />
               </div>
             ) : (
-              filteredMail.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSelectedMail(item)}
-                  className="block w-full px-4 py-2.5 text-left hover:bg-slate-50/70 dark:hover:bg-[#18222F]/50 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2 text-[11px]">
-                    <span
-                      className={`font-medium ${
-                        item.requiresAction
-                          ? 'text-red-700 dark:text-red-400'
-                          : 'text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      {item.requiresAction ? 'Exige resposta / ação' : 'Informativo sem ação imediata'}
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-400 shrink-0">
-                      {item.dueDate ? `Prazo ${item.dueDate}` : item.receivedAt}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-[13px] font-medium text-slate-900 dark:text-slate-100 truncate">
-                    {item.subject}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {item.sender} · {item.actionReason}
-                  </p>
-                </button>
-              ))
+              filteredMail.map((item) => {
+                const isHandled = resolvedMailIds.includes(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelectedMail(item)}
+                    className="block w-full px-4 py-2.5 text-left hover:bg-slate-50/70 dark:hover:bg-[#18222F]/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <span
+                        className={`font-medium ${
+                          isHandled
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : item.requiresAction
+                              ? 'text-red-700 dark:text-red-400'
+                              : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {isHandled
+                          ? 'Tratado na sessão local'
+                          : item.requiresAction
+                            ? 'Exige resposta / ação'
+                            : 'Informativo sem ação imediata'}
+                      </span>
+                      <span className="font-mono tabular-nums text-slate-400 shrink-0">
+                        {item.dueDate ? `Prazo ${item.dueDate}` : item.receivedAt}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[13px] font-medium text-slate-900 dark:text-slate-100 truncate">
+                      {item.subject}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {item.sender} · {item.actionReason}
+                    </p>
+                  </button>
+                );
+              })
             )}
           </div>
         </section>
       </div>
+
+      {/* Agenda Event Detail Drawer */}
+      <Drawer
+        open={Boolean(selectedAgendaEvent)}
+        onClose={() => setSelectedAgendaEvent(null)}
+        title={selectedAgendaEvent?.title || 'Compromisso de Agenda'}
+        subtitle={
+          selectedAgendaEvent
+            ? `${selectedAgendaEvent.startTime}–${selectedAgendaEvent.endTime} · ${selectedAgendaEvent.type} · ${selectedAgendaEvent.origin}`
+            : undefined
+        }
+      >
+        {selectedAgendaEvent && (
+          <div className="space-y-4 text-xs">
+            <div className="rounded-lg border border-slate-200 dark:border-[#243242] bg-slate-50 dark:bg-[#18222F] p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  Origem do compromisso
+                </span>
+                <SemanticLabel state="nominal" label={selectedAgendaEvent.origin} compact />
+              </div>
+              {selectedAgendaEvent.participants && (
+                <p className="text-slate-600 dark:text-slate-300">
+                  <strong>Participantes:</strong> {selectedAgendaEvent.participants}
+                </p>
+              )}
+              {selectedAgendaEvent.locationOrLink && (
+                <p className="text-slate-600 dark:text-slate-300">
+                  <strong>Local / Template:</strong> {selectedAgendaEvent.locationOrLink}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => handleAgendaNavigate(selectedAgendaEvent)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3.5 py-2 text-xs font-medium text-white dark:text-slate-950"
+              >
+                <MonitorPlay size={14} />
+                <span>Abrir rito / módulo correspondente</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </Drawer>
 
       {/* Mail Detail Drawer */}
       <Drawer
@@ -533,8 +639,20 @@ export const OverviewPage: React.FC<{
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 dark:text-slate-400">Classificação operacional</span>
                 <SemanticLabel
-                  state={selectedMail.requiresAction ? 'critical' : 'neutral'}
-                  label={selectedMail.requiresAction ? 'Exige ação do gestor' : 'Informativo / Sem resposta obrigatória'}
+                  state={
+                    resolvedMailIds.includes(selectedMail.id)
+                      ? 'nominal'
+                      : selectedMail.requiresAction
+                        ? 'critical'
+                        : 'neutral'
+                  }
+                  label={
+                    resolvedMailIds.includes(selectedMail.id)
+                      ? 'Tratado na sessão local'
+                      : selectedMail.requiresAction
+                        ? 'Exige ação do gestor'
+                        : 'Informativo / Sem resposta obrigatória'
+                  }
                   compact
                 />
               </div>
@@ -555,21 +673,33 @@ export const OverviewPage: React.FC<{
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-[#243242] pt-3">
               <span className="text-[11px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
                 <Inbox size={13} />
-                Ações reais dependem de conexão Microsoft 365 + backend.
+                Gravação no Outlook depende de M365; ações abaixo operam na sessão local.
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  pushToast({
-                    title: 'Ação bloqueada sem integração Microsoft 365',
-                    description: 'A criação automática de pendência a partir de e-mails do Outlook aguarda homologação OAuth/M365 e endpoint no backend.',
-                    tone: 'warning',
-                  });
-                }}
-                className="rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
-              >
-                Converter em pendência (Requer M365)
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    markMailResolved(selectedMail.id);
+                    setSelectedMail(null);
+                    pushToast({
+                      title: 'E-mail marcado como tratado na sessão',
+                      tone: 'info',
+                    });
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-[#243242] px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#18222F] whitespace-nowrap"
+                >
+                  <CheckCircle2 size={13} />
+                  <span>Marcar tratado</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleConvertMailToLocalPending(selectedMail)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
+                >
+                  <ShieldPlus size={13} />
+                  <span>Criar pendência na sessão</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
