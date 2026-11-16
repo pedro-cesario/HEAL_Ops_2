@@ -13,6 +13,7 @@ import {
   Modal,
   UnavailableState,
 } from '../components/common/UiPrimitives';
+import { WeeklyAlignmentWorkspace } from '../components/weekly-alignment/WeeklyAlignmentWorkspace';
 import { useOps } from '../context/OpsContext';
 import { MeetingsDocumentsAdapter } from '../services/opsAdapters';
 import { MeetingTemplateWorkspace, type TemplateViewMode } from '../templates/MeetingTemplates';
@@ -29,7 +30,7 @@ const WORKFLOW_STAGES = [
 ];
 
 export const MeetingsPage: React.FC = () => {
-  const { dataMode, refreshTrigger, triggerRefresh, setActiveModule, pushToast } = useOps();
+  const { dataMode, triggerRefresh, setActiveModule, pushToast } = useOps();
 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
@@ -63,7 +64,7 @@ export const MeetingsPage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [dataMode, refreshTrigger]);
+  }, [dataMode]);
 
   const filteredMeetings = useMemo(() => {
     if (statusFilter === 'Todas') return meetings;
@@ -154,12 +155,21 @@ export const MeetingsPage: React.FC = () => {
     setMeetings((prev) => [created, ...prev]);
     setCreateModalOpen(false);
     setNewTitle('');
-    setActiveWorkspace({ meetingId: created.id, mode: 'executive' });
+    setActiveWorkspace({
+      meetingId: created.id,
+      mode: created.templateCode === 'TPL-02' ? 'presentation' : 'executive',
+    });
     pushToast({
       title: 'Rascunho criado na sessão',
       description: 'Alterações ficam disponíveis apenas nesta sessão até a conexão com o backend.',
       tone: 'info',
     });
+  };
+
+  const handleSyncMeetingPatch = (meetingId: string, patch: Partial<MeetingRecord>) => {
+    setMeetings((prev) =>
+      prev.map((m) => (m.id === meetingId ? { ...m, ...patch } : m))
+    );
   };
 
   if (loading) return <LoadingSkeletonGrid rows={5} />;
@@ -176,6 +186,26 @@ export const MeetingsPage: React.FC = () => {
   }
 
   if (selectedMeeting && activeWorkspace) {
+    if (
+      selectedMeeting.templateCode === 'TPL-02' &&
+      activeWorkspace.mode !== 'official_document'
+    ) {
+      return (
+        <WeeklyAlignmentWorkspace
+          meeting={selectedMeeting}
+          onSyncToMeetingList={handleSyncMeetingPatch}
+          onExit={(patch) => {
+            if (patch) handleSyncMeetingPatch(selectedMeeting.id, patch);
+            setActiveWorkspace(null);
+          }}
+          onOpenOfficialDocument={(patch) => {
+            handleSyncMeetingPatch(selectedMeeting.id, patch);
+            setActiveWorkspace({ meetingId: selectedMeeting.id, mode: 'official_document' });
+          }}
+        />
+      );
+    }
+
     return (
       <div className="max-w-[1600px] mx-auto">
         <MeetingTemplateWorkspace
@@ -296,30 +326,53 @@ export const MeetingsPage: React.FC = () => {
                   </span>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'executive' })}
-                      className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
-                    >
-                      <ShieldCheck size={13} />
-                      <span>Executiva</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'presentation' })}
-                      className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-2.5 py-1 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
-                    >
-                      <MonitorPlay size={13} />
-                      <span>Apresentar</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'official_document' })}
-                      className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
-                    >
-                      <FileText size={13} />
-                      <span>Documento</span>
-                    </button>
+                    {mtg.templateCode === 'TPL-02' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'presentation' })}
+                          className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-3 py-1.5 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
+                        >
+                          <MonitorPlay size={13} />
+                          <span>Abrir Alinhamento Semanal</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'official_document' })}
+                          className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1.5 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
+                        >
+                          <FileText size={13} />
+                          <span>Documento</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'executive' })}
+                          className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
+                        >
+                          <ShieldCheck size={13} />
+                          <span>Executiva</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'presentation' })}
+                          className="inline-flex items-center gap-1 rounded bg-[#0F5E59] hover:bg-[#0B4A46] dark:bg-[#14B8A6] dark:hover:bg-[#0D9488] px-2.5 py-1 text-xs font-medium text-white dark:text-slate-950 transition-colors whitespace-nowrap"
+                        >
+                          <MonitorPlay size={13} />
+                          <span>Apresentar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkspace({ meetingId: mtg.id, mode: 'official_document' })}
+                          className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-[#243242] px-2.5 py-1 text-xs font-medium hover:border-[#0F5E59] transition-colors whitespace-nowrap"
+                        >
+                          <FileText size={13} />
+                          <span>Documento</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
